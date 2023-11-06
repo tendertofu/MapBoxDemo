@@ -39,6 +39,8 @@ dependencies {
     //below dependency is needed to facilitate requesting location permissions
     //implementation 'com.mapbox.mapboxsdk:mapbox-android-core:3.1.0'
     //implementation 'com.mapbox.mapboxsdk:mapbox-android-core:5.0.0'
+    //GOOGLE PLAY
+    implementation 'com.google.android.gms:play-services-location:21.0.1'
 
 
 

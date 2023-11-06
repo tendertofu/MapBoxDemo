@@ -1,45 +1,30 @@
 package com.enterpreta.mapboxdemo
 
 import android.annotation.SuppressLint
-import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Point
-import android.graphics.drawable.BitmapDrawable
-import android.graphics.drawable.Drawable
+import android.location.Location
 import android.os.Bundle
+import android.widget.Button
 import android.widget.TextView
+import android.widget.Toast
 
-import androidx.annotation.DrawableRes
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.content.res.AppCompatResources
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationServices
 import com.mapbox.android.core.location.LocationEngineProvider
 import com.mapbox.android.core.location.LocationEngineRequest
 import com.mapbox.android.core.permissions.PermissionsListener
 import com.mapbox.android.core.permissions.PermissionsManager
 
 import com.mapbox.maps.CameraOptions
-import com.mapbox.maps.MapInitOptions
-import com.mapbox.maps.MapOptions
-import com.mapbox.maps.MapSnapshotInterface
 import com.mapbox.maps.MapView
+import com.mapbox.maps.MapboxMap
 
 import com.mapbox.maps.Style
-import com.mapbox.maps.plugin.PuckBearingSource
+import com.mapbox.maps.plugin.animation.camera
 
 import com.mapbox.maps.plugin.animation.easeTo
-import com.mapbox.maps.plugin.annotation.annotations
-import com.mapbox.maps.plugin.annotation.generated.PointAnnotationOptions
-import com.mapbox.maps.plugin.annotation.generated.PolygonAnnotationOptions
-import com.mapbox.maps.plugin.annotation.generated.PolylineAnnotationOptions
-import com.mapbox.maps.plugin.annotation.generated.createPointAnnotationManager
-import com.mapbox.maps.plugin.annotation.generated.createPolygonAnnotationManager
-import com.mapbox.maps.plugin.annotation.generated.createPolylineAnnotationManager
 
 import com.mapbox.maps.plugin.locationcomponent.location2
-import com.mapbox.maps.plugin.viewport.viewport
-import com.mapbox.turf.TurfJoins
-import com.mapbox.turf.TurfMeasurement
 
 
 /*
@@ -169,10 +154,14 @@ class MainActivity : AppCompatActivity() {
 class MainActivity : AppCompatActivity() {
     private lateinit var mapView: MapView
     private lateinit var textView2: TextView
+    private lateinit var myToggler : Button
     private lateinit var permissionsManager: PermissionsManager
+    private lateinit var mFusedLocationClient: FusedLocationProviderClient
+    private lateinit var mapboxMap : MapboxMap
+
     //private lateinit var permissionsListener : PermissionsListener
 
-    @SuppressLint("MissingPermission")
+    @SuppressLint("MissingPermission", "MissingInflatedId")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -223,7 +212,6 @@ class MainActivity : AppCompatActivity() {
             //show actual device location on map
 
 
-
         } else {
             permissionsManager = PermissionsManager(permissionsListener)
             permissionsManager.requestLocationPermissions(this)
@@ -231,23 +219,83 @@ class MainActivity : AppCompatActivity() {
 
         mapView = findViewById(R.id.mapView)
         textView2 = findViewById(R.id.textView2)
+        myToggler= findViewById(R.id.Toggler)
+
+        myToggler.setOnClickListener{
+
+            var bearing = mapboxMap.cameraState.bearing
+            if(bearing==180.0){
+                bearing=0.0
+            }else
+            {
+                bearing=180.0
+            }
+            var newCameraPosition = CameraOptions.Builder()
+                .bearing(bearing)
+                .build()
+            //Toast.makeText(this, "Bearing is: $bearing", Toast.LENGTH_SHORT).show()
+            // set camera position
+            mapView.getMapboxMap().setCamera(newCameraPosition)
+        }
+
+
+        mapboxMap= mapView.getMapboxMap()
+
+        mapboxMap.loadStyleUri(
+            Style.MAPBOX_STREETS,
+            // After the style is loaded, initialize the Location component.
+            object : Style.OnStyleLoaded {
+                override fun onStyleLoaded(style: Style) {
+                    mapView.location2.updateSettings {
+                        enabled = true
+                        pulsingEnabled = true
+
+                    }
+
+                }
+            }
+        )
 
 
 
+        mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+        mFusedLocationClient.lastLocation.addOnCompleteListener(this) { task ->
+            val location: Location = task.result
+            var cameraOptions = CameraOptions.Builder()
+                .center(com.mapbox.geojson.Point.fromLngLat(location.longitude, location.latitude))
+                .zoom(20.0)
+                .build()
 
-        var cameraOptions = CameraOptions.Builder()
-            .center(com.mapbox.geojson.Point.fromLngLat(120.98478,14.52758))
+            // Move the camera to the new center point.
+            mapView.getMapboxMap().easeTo(cameraOptions)
+
+            //mapView.location.addOnIndicatorBearingChangedListener(onIndicatorBearingChangedListener)
+        }
+
+      /*  var cameraOptions = CameraOptions.Builder()
+            .center(com.mapbox.geojson.Point.fromLngLat(120.994083, 14.519185))
             .build()
 
         // Move the camera to the new center point.
-        mapView.getMapboxMap().easeTo(cameraOptions)
+        mapView.getMapboxMap().easeTo(cameraOptions)*/
+
+
+  /*  var cameraOptions = CameraOptions.Builder()
+        .center(com.mapbox.geojson.Point.fromLngLat(120.98478, 14.52758))
+        .build()
+
+    // Move the camera to the new center point.
+    mapView.getMapboxMap().easeTo(cameraOptions)*/
+
+
+
 
 
         //added by Renan for map to rotate with heading
         //reference https://docs.mapbox.com/android/maps/guides/camera-and-animation/camera/
-        
 
-        //  SHOULD BE THE START OF COMMENT OUT
+
+     /*   //  SHOULD BE THE START OF COMMENT OUT
 
 
         //mapView.getMapboxMap().loadStyleUri(Style.SATELLITE)
@@ -272,7 +320,6 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         )
-
 
         // create a polygon layer
 
@@ -414,9 +461,16 @@ class MainActivity : AppCompatActivity() {
             bitmap
         }
 
-        //SHOULD MARK END OF COMMENT OUT
+      */  //SHOULD MARK END OF COMMENT OUT
 
     }
+
+
+  /*  private val onIndicatorBearingChangedListener = OnIndicatorBearingChangedListener {
+        mapView.getMapboxMap().setCamera(CameraOptions.Builder().bearing(it).build())
+    }*/
+
+
 
 }
 
