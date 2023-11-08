@@ -1,41 +1,63 @@
 package com.enterpreta.mapboxdemo
 
+//for compass sensor
+import android.Manifest
 import android.annotation.SuppressLint
+import android.content.Context
+import android.content.pm.PackageManager
+import android.graphics.Color
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.location.Location
 import android.os.Bundle
 import android.widget.Button
 import android.widget.TextView
-import android.widget.Toast
-
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import com.mapbox.android.core.location.LocationEngineProvider
 import com.mapbox.android.core.location.LocationEngineRequest
 import com.mapbox.android.core.permissions.PermissionsListener
 import com.mapbox.android.core.permissions.PermissionsManager
-
 import com.mapbox.maps.CameraOptions
 import com.mapbox.maps.MapView
 import com.mapbox.maps.MapboxMap
-
 import com.mapbox.maps.Style
-import com.mapbox.maps.plugin.animation.camera
-
 import com.mapbox.maps.plugin.animation.easeTo
-
 import com.mapbox.maps.plugin.locationcomponent.location2
+
 
 /* START OF PREVIOUS MAIN ACTIVITY */
 
 //var mapView: MapView? = null
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), SensorEventListener {
     private lateinit var mapView: MapView
     private lateinit var textView2: TextView
-    private lateinit var myToggler : Button
+    private lateinit var centerMe: Button
+    private lateinit var myToggler: Button
     private lateinit var permissionsManager: PermissionsManager
     private lateinit var mFusedLocationClient: FusedLocationProviderClient
-    private lateinit var mapboxMap : MapboxMap
+    private lateinit var mapboxMap: MapboxMap
+
+    private lateinit var sensorManager: SensorManager
+    private lateinit var magnetometer: Sensor
+    private lateinit var accelerometer: Sensor
+    private var lastAccelerometer = FloatArray(3)
+    private var lastMagnetometer = FloatArray(3)
+    private var lastAccelerometerSet = false
+    private var lastMagnetometerSet = false
+    private var rotationMatrix = FloatArray(9)
+    private var orientation = FloatArray(3)
+    private var azimuthInRadians: Float = 0f
+    private var azimuthInDegrees: Float = 0f
+    private var azimuthInDegrees_prev: Float = 0f
+    private val rotationSensitivity: Float = 5f // the amount of bearing change to make map rotate
+
+    //for testing purposes only. Should not be used for real development
+    private var clickCounter: Int = 0
 
     //private lateinit var permissionsListener : PermissionsListener
 
@@ -43,6 +65,10 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        magnetometer = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
+        accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
 
         //NOTE:  the permissionListener and the permissionManager (code follows) are packages from MapBox
         //see for details: https://docs.mapbox.com/android/maps/guides/user-location/
@@ -53,7 +79,6 @@ class MainActivity : AppCompatActivity() {
 
         var permissionsListener: PermissionsListener = object : PermissionsListener {
             override fun onExplanationNeeded(permissionsToExplain: List<String>) {
-
             }
 
             override fun onPermissionResult(granted: Boolean) {
@@ -64,11 +89,9 @@ class MainActivity : AppCompatActivity() {
                 } else {
 
                     // User denied the permission
-
                 }
             }
         }
-
 
         if (PermissionsManager.areLocationPermissionsGranted(this)) {
 
@@ -97,27 +120,13 @@ class MainActivity : AppCompatActivity() {
 
         mapView = findViewById(R.id.mapView)
         textView2 = findViewById(R.id.textView2)
-        myToggler= findViewById(R.id.Toggler)
+        centerMe = findViewById(R.id.butCenter)
 
-        myToggler.setOnClickListener{
-
-            var bearing = mapboxMap.cameraState.bearing
-            if(bearing==180.0){
-                bearing=0.0
-            }else
-            {
-                bearing=180.0
-            }
-            var newCameraPosition = CameraOptions.Builder()
-                .bearing(bearing)
-                .build()
-            //Toast.makeText(this, "Bearing is: $bearing", Toast.LENGTH_SHORT).show()
-            // set camera position
-            mapView.getMapboxMap().setCamera(newCameraPosition)
+        centerMe.setOnClickListener{
+            movePuckToCenter(false)
         }
 
-
-        mapboxMap= mapView.getMapboxMap()
+        mapboxMap = mapView.getMapboxMap()
 
         mapboxMap.loadStyleUri(
             Style.MAPBOX_STREETS,
@@ -126,7 +135,9 @@ class MainActivity : AppCompatActivity() {
                 override fun onStyleLoaded(style: Style) {
                     mapView.location2.updateSettings {
                         enabled = true
+                        pulsingColor = Color.parseColor("#FF0000")  //red
                         pulsingEnabled = true
+                        //pulsingMaxRadius=15f
 
                     }
 
@@ -134,21 +145,13 @@ class MainActivity : AppCompatActivity() {
             }
         )
 
-
-
-        mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+        /*     mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         mFusedLocationClient.lastLocation.addOnCompleteListener(this) { task ->
-            val location: Location = task.result
-            var cameraOptions = CameraOptions.Builder()
-                .center(com.mapbox.geojson.Point.fromLngLat(location.longitude, location.latitude))
-                .zoom(20.0)
-                .build()
+            val location: Location = task.result*/
+        movePuckToCenter(true )  //zoom in when starting
 
-            // Move the camera to the new center point.
-            mapView.getMapboxMap().easeTo(cameraOptions)
+        //mapView.location.addOnIndicatorBearingChangedListener(onIndicatorBearingChangedListener)
 
-            //mapView.location.addOnIndicatorBearingChangedListener(onIndicatorBearingChangedListener)
-        }
 
       /*  var cameraOptions = CameraOptions.Builder()
             .center(com.mapbox.geojson.Point.fromLngLat(120.994083, 14.519185))
@@ -344,11 +347,102 @@ class MainActivity : AppCompatActivity() {
     }
 
 
+    override fun onResume() {
+        super.onResume()
+        sensorManager.registerListener(this, magnetometer, SensorManager.SENSOR_DELAY_GAME);
+        sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_GAME);
+    }
+
+    override fun onPause() {
+        super.onPause()
+        sensorManager.unregisterListener(this, magnetometer);
+        sensorManager.unregisterListener(this, accelerometer);
+    }
+
+    override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) {
+
+    }
+
+    override fun onSensorChanged(event: SensorEvent) {
+        if (event.sensor == magnetometer) {
+            System.arraycopy(event.values, 0, lastMagnetometer, 0, event.values.size);
+            lastMagnetometerSet = true;
+        } else if (event.sensor == accelerometer) {
+            System.arraycopy(event.values, 0, lastAccelerometer, 0, event.values.size);
+            lastAccelerometerSet = true;
+        }
+
+        if (lastAccelerometerSet && lastMagnetometerSet) {
+            SensorManager.getRotationMatrix(rotationMatrix, null, lastAccelerometer, lastMagnetometer);
+            SensorManager.getOrientation(rotationMatrix, orientation);
+
+            azimuthInRadians = orientation[0]
+            azimuthInDegrees = (Math.toDegrees(azimuthInRadians.toDouble()) + 360).toFloat() % 360
+
+            if(Math.abs(azimuthInDegrees-azimuthInDegrees_prev)> rotationSensitivity) {
+                azimuthInDegrees_prev=(azimuthInDegrees+azimuthInDegrees_prev)/2
+                textView2.text=azimuthInDegrees.toString()
+                var newCameraPosition = CameraOptions.Builder()
+                    .bearing(azimuthInDegrees.toDouble())
+                    .build()
+                //Toast.makeText(this, "Bearing is: $bearing", Toast.LENGTH_SHORT).show()
+                // set camera position
+                mapView.getMapboxMap().setCamera(newCameraPosition)
+            }
+
+
+
+
+        }
+    }
+
+    //center location on screen
+    fun movePuckToCenter(zoomStatus: Boolean) {
+        mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+        if (ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            // TODO: Consider calling
+            //    ActivityCompat#requestPermissions
+            // here to request the missing permissions, and then overriding
+            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
+            //                                          int[] grantResults)
+            // to handle the case where the user grants the permission. See the documentation
+            // for ActivityCompat#requestPermissions for more details.
+            return
+        }
+
+        mFusedLocationClient.lastLocation.addOnCompleteListener(this) { task ->
+            var location: Location = task.result
+            if(zoomStatus) {
+                var cameraOptions = CameraOptions.Builder()
+                    .center(com.mapbox.geojson.Point.fromLngLat(location.longitude, location.latitude))
+                    .zoom(20.0)
+                    .build()
+                // Move the camera to the new center point.
+                mapView.getMapboxMap().easeTo(cameraOptions)
+            }else
+            {
+                //NO Zoom
+                var cameraOptions = CameraOptions.Builder()
+                    .center(com.mapbox.geojson.Point.fromLngLat(location.longitude, location.latitude))
+                    .build()
+                // Move the camera to the new center point.
+                mapView.getMapboxMap().easeTo(cameraOptions)
+            }
+
+
+        }
+    }
+
   /*  private val onIndicatorBearingChangedListener = OnIndicatorBearingChangedListener {
         mapView.getMapboxMap().setCamera(CameraOptions.Builder().bearing(it).build())
     }*/
-
-
 
 }
 
