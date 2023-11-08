@@ -27,6 +27,19 @@ import com.mapbox.maps.MapView
 import com.mapbox.maps.MapboxMap
 import com.mapbox.maps.Style
 import com.mapbox.maps.plugin.animation.easeTo
+import com.mapbox.maps.plugin.annotation.AnnotationPlugin
+import com.mapbox.maps.plugin.annotation.annotations
+import com.mapbox.maps.plugin.annotation.generated.CircleAnnotationManager
+import com.mapbox.maps.plugin.annotation.generated.CircleAnnotationOptions
+import com.mapbox.maps.plugin.annotation.generated.PointAnnotationManager
+import com.mapbox.maps.plugin.annotation.generated.PolygonAnnotationManager
+import com.mapbox.maps.plugin.annotation.generated.PolygonAnnotationOptions
+import com.mapbox.maps.plugin.annotation.generated.PolylineAnnotationManager
+import com.mapbox.maps.plugin.annotation.generated.PolylineAnnotationOptions
+import com.mapbox.maps.plugin.annotation.generated.createCircleAnnotationManager
+import com.mapbox.maps.plugin.annotation.generated.createPointAnnotationManager
+import com.mapbox.maps.plugin.annotation.generated.createPolygonAnnotationManager
+import com.mapbox.maps.plugin.annotation.generated.createPolylineAnnotationManager
 import com.mapbox.maps.plugin.locationcomponent.location2
 
 
@@ -37,7 +50,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private lateinit var mapView: MapView
     private lateinit var textView2: TextView
     private lateinit var centerMe: Button
-    private lateinit var myToggler: Button
     private lateinit var permissionsManager: PermissionsManager
     private lateinit var mFusedLocationClient: FusedLocationProviderClient
     private lateinit var mapboxMap: MapboxMap
@@ -57,7 +69,13 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private val rotationSensitivity: Float = 5f // the amount of bearing change to make map rotate
 
     //for testing purposes only. Should not be used for real development
+    private lateinit var butTester: Button
     private var clickCounter: Int = 0
+    //private lateinit var  listOfPoints: List<com.mapbox.geojson.Point>
+    private lateinit var annotationApi: AnnotationPlugin
+    //private val polygonAnnotationManager = annotationApi.createPolygonAnnotationManager()
+    private lateinit var polylineAnnotationManager: PolylineAnnotationManager
+    private lateinit var  circleAnnotationManager: CircleAnnotationManager
 
     //private lateinit var permissionsListener : PermissionsListener
 
@@ -121,11 +139,19 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         mapView = findViewById(R.id.mapView)
         textView2 = findViewById(R.id.textView2)
         centerMe = findViewById(R.id.butCenter)
+        butTester=findViewById(R.id.butTester)
 
         centerMe.setOnClickListener{
             movePuckToCenter(false)
+            polylineAnnotationManager.deleteAll()
+            circleAnnotationManager.deleteAll()
+//            if(polylineAnnotationManager!=null){
+//                polylineAnnotationManager.deleteAll()
+//            }
         }
-
+        butTester.setOnClickListener{
+            createPolygonTester()
+        }
         mapboxMap = mapView.getMapboxMap()
 
         mapboxMap.loadStyleUri(
@@ -144,6 +170,11 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 }
             }
         )
+
+        //Initialize whats needed to make annotations over the map
+        annotationApi = mapView.annotations
+        polylineAnnotationManager = annotationApi.createPolylineAnnotationManager()
+        circleAnnotationManager = annotationApi.createCircleAnnotationManager()
 
         /*     mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         mFusedLocationClient.lastLocation.addOnCompleteListener(this) { task ->
@@ -438,6 +469,33 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
 
         }
+    }
+
+    fun createPolygonTester(){
+        val points2 =
+            listOf (
+                listOf(
+                    com.mapbox.geojson.Point.fromLngLat(120.99833,14.51943),
+                    com.mapbox.geojson.Point.fromLngLat(120.99692,14.52203),
+                    com.mapbox.geojson.Point.fromLngLat(120.99402,14.52290)
+                )
+            )
+
+        val listOfPoints = points2[0]
+
+        val polylineAnnotationOptions2 = PolylineAnnotationOptions()
+            .withPoints(listOfPoints)
+            .withLineColor("#FF0000")
+            .withLineWidth(3.0)
+        polylineAnnotationManager.create(polylineAnnotationOptions2)
+
+        //add circle
+        val circleAnnotationOption = CircleAnnotationOptions()
+            .withCircleColor("#FF0000")
+             .withPoint(  com.mapbox.geojson.Point.fromLngLat(120.99833,14.51943))
+            //.withPoint(  com.mapbox.geojson.Point.fromLngLat(120.99692,14.52203))
+            .withCircleRadius(5.0)
+        circleAnnotationManager.create(circleAnnotationOption)
     }
 
   /*  private val onIndicatorBearingChangedListener = OnIndicatorBearingChangedListener {
