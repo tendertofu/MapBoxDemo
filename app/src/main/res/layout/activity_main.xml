@@ -7,6 +7,17 @@
     tools:context=".MainActivity">
 
     <Button
+        android:id="@+id/butBounds"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Bounds"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintVertical_bias="0.96" />
+
+    <Button
         android:id="@+id/butTester"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -25,7 +36,7 @@
         android:text="Center"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintHorizontal_bias="0.17"
+        app:layout_constraintHorizontal_bias="0.13"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintVertical_bias="0.96" />

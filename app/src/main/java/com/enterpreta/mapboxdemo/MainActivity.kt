@@ -2,6 +2,7 @@ package com.enterpreta.mapboxdemo
 
 //for compass sensor
 import android.Manifest
+import android.R.attr.data
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
@@ -14,8 +15,10 @@ import android.location.Location
 import android.os.Bundle
 import android.widget.Button
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
+import androidx.lifecycle.lifecycleScope
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import com.mapbox.android.core.location.LocationEngineProvider
@@ -31,16 +34,16 @@ import com.mapbox.maps.plugin.annotation.AnnotationPlugin
 import com.mapbox.maps.plugin.annotation.annotations
 import com.mapbox.maps.plugin.annotation.generated.CircleAnnotationManager
 import com.mapbox.maps.plugin.annotation.generated.CircleAnnotationOptions
-import com.mapbox.maps.plugin.annotation.generated.PointAnnotationManager
-import com.mapbox.maps.plugin.annotation.generated.PolygonAnnotationManager
-import com.mapbox.maps.plugin.annotation.generated.PolygonAnnotationOptions
 import com.mapbox.maps.plugin.annotation.generated.PolylineAnnotationManager
 import com.mapbox.maps.plugin.annotation.generated.PolylineAnnotationOptions
 import com.mapbox.maps.plugin.annotation.generated.createCircleAnnotationManager
-import com.mapbox.maps.plugin.annotation.generated.createPointAnnotationManager
-import com.mapbox.maps.plugin.annotation.generated.createPolygonAnnotationManager
 import com.mapbox.maps.plugin.annotation.generated.createPolylineAnnotationManager
 import com.mapbox.maps.plugin.locationcomponent.location2
+import com.mapbox.turf.TurfConstants
+import com.mapbox.turf.TurfMeasurement
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import java.util.concurrent.Flow
 
 
 /* START OF PREVIOUS MAIN ACTIVITY */
@@ -67,15 +70,18 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var azimuthInDegrees: Float = 0f
     private var azimuthInDegrees_prev: Float = 0f
     private val rotationSensitivity: Float = 5f // the amount of bearing change to make map rotate
+    private var fieldPerimeter: MutableList<com.mapbox.geojson.Point> = mutableListOf()
 
     //for testing purposes only. Should not be used for real development
     private lateinit var butTester: Button
+    private lateinit var butBounds: Button
     private var clickCounter: Int = 0
     //private lateinit var  listOfPoints: List<com.mapbox.geojson.Point>
     private lateinit var annotationApi: AnnotationPlugin
     //private val polygonAnnotationManager = annotationApi.createPolygonAnnotationManager()
     private lateinit var polylineAnnotationManager: PolylineAnnotationManager
     private lateinit var  circleAnnotationManager: CircleAnnotationManager
+    private lateinit var lastKnownLocation: Location
 
     //private lateinit var permissionsListener : PermissionsListener
 
@@ -140,18 +146,71 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         textView2 = findViewById(R.id.textView2)
         centerMe = findViewById(R.id.butCenter)
         butTester=findViewById(R.id.butTester)
+        butBounds = findViewById(R.id.butBounds)
 
         centerMe.setOnClickListener{
             movePuckToCenter(false)
-            polylineAnnotationManager.deleteAll()
-            circleAnnotationManager.deleteAll()
-//            if(polylineAnnotationManager!=null){
-//                polylineAnnotationManager.deleteAll()
-//            }
+         /*   polylineAnnotationManager.deleteAll()
+            circleAnnotationManager.deleteAll()*/
+
         }
         butTester.setOnClickListener{
             createPolygonTester()
         }
+        butBounds.setOnClickListener{
+            lateinit var newPoint: com.mapbox.geojson.Point
+            getMyLastLocation {
+                when(clickCounter){
+                    0 ->{
+                        newPoint = com.mapbox.geojson.Point.fromLngLat(lastKnownLocation.longitude, lastKnownLocation.latitude)
+                        fieldPerimeter.add(newPoint)
+                        showCircle(newPoint)
+                        showLine(newPoint, fieldPerimeter[fieldPerimeter.size-1])
+                        clickCounter+=1
+                    }
+                    1 ->{
+                        newPoint = TurfMeasurement.destination(fieldPerimeter[0],100.0,0.0, TurfConstants.UNIT_METERS)
+                        fieldPerimeter.add(newPoint)
+                        val n= fieldPerimeter.size
+                        showLine(fieldPerimeter[n-2],fieldPerimeter[n-1])
+                        showCircle(fieldPerimeter[n-1])
+                        clickCounter+=1
+                    }
+                    2 ->{
+                        newPoint = TurfMeasurement.destination(fieldPerimeter[1],115.0,100.0, TurfConstants.UNIT_METERS)
+                        fieldPerimeter.add(newPoint)
+                        val n= fieldPerimeter.size
+                        showLine(fieldPerimeter[n-2],fieldPerimeter[n-1])
+                        showCircle(fieldPerimeter[n-1])
+                        clickCounter+=1
+                    }
+                    3 -> {
+                        newPoint = TurfMeasurement.destination(
+                            fieldPerimeter[2],
+                            100.0,
+                            180.0,
+                            TurfConstants.UNIT_METERS
+                        )
+                        fieldPerimeter.add(newPoint)
+                        val n = fieldPerimeter.size
+                        showLine(fieldPerimeter[n - 2], fieldPerimeter[n - 1])
+                        showCircle(fieldPerimeter[n - 1])
+                        clickCounter += 1
+                    }
+                    4 -> {
+                        val n = fieldPerimeter.size
+                        showLine(fieldPerimeter[n - 1], fieldPerimeter[0])
+                        clickCounter += 1
+                    }
+                }
+
+            }
+
+            }
+
+
+        mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+
         mapboxMap = mapView.getMapboxMap()
 
         mapboxMap.loadStyleUri(
@@ -421,15 +480,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 mapView.getMapboxMap().setCamera(newCameraPosition)
             }
 
-
-
-
         }
     }
 
     //center location on screen
     fun movePuckToCenter(zoomStatus: Boolean) {
-        mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+        //mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         if (ActivityCompat.checkSelfPermission(
                 this,
                 Manifest.permission.ACCESS_FINE_LOCATION
@@ -466,8 +522,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 // Move the camera to the new center point.
                 mapView.getMapboxMap().easeTo(cameraOptions)
             }
-
-
         }
     }
 
@@ -493,6 +547,58 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         val circleAnnotationOption = CircleAnnotationOptions()
             .withCircleColor("#FF0000")
              .withPoint(  com.mapbox.geojson.Point.fromLngLat(120.99833,14.51943))
+            //.withPoint(  com.mapbox.geojson.Point.fromLngLat(120.99692,14.52203))
+            .withCircleRadius(5.0)
+        circleAnnotationManager.create(circleAnnotationOption)
+    }
+
+    fun getMyLastLocation(finishFunction: ()-> Unit) {
+       var myPresentPoint = com.mapbox.geojson.Point.fromLngLat(0.0,0.0)
+        var isLocationReturned: Boolean= false;
+        if (ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            // TODO: Consider calling
+            //    ActivityCompat#requestPermissions
+            // here to request the missing permissions, and then overriding
+            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
+            //                                          int[] grantResults)
+            // to handle the case where the user grants the permission. See the documentation
+            // for ActivityCompat#requestPermissions for more details.
+
+            //return
+        }
+                mFusedLocationClient.lastLocation.addOnCompleteListener(this) { task ->
+                    var location: Location = task.result
+                    lastKnownLocation = location
+                    finishFunction()
+                }
+    }
+
+    fun showLine(point1: com.mapbox.geojson.Point, point2: com.mapbox.geojson.Point){
+        val points =
+            listOf (
+                listOf(
+                    point1,
+                    point2
+                )
+            )
+
+        val polylineAnnotationOptions = PolylineAnnotationOptions()
+            .withPoints(points[0])
+            .withLineColor("#FF0000")
+            .withLineWidth(3.0)
+        polylineAnnotationManager.create(polylineAnnotationOptions)
+    }
+    fun showCircle(point1: com.mapbox.geojson.Point){
+        val circleAnnotationOption = CircleAnnotationOptions()
+            .withCircleColor("#FF0000")
+            .withPoint(  point1)
             //.withPoint(  com.mapbox.geojson.Point.fromLngLat(120.99692,14.52203))
             .withCircleRadius(5.0)
         circleAnnotationManager.create(circleAnnotationOption)
