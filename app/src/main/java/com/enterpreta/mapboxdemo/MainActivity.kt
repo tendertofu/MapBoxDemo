@@ -25,6 +25,7 @@ import com.mapbox.android.core.location.LocationEngineProvider
 import com.mapbox.android.core.location.LocationEngineRequest
 import com.mapbox.android.core.permissions.PermissionsListener
 import com.mapbox.android.core.permissions.PermissionsManager
+import com.mapbox.geojson.BoundingBox
 import com.mapbox.maps.CameraOptions
 import com.mapbox.maps.MapView
 import com.mapbox.maps.MapboxMap
@@ -34,9 +35,12 @@ import com.mapbox.maps.plugin.annotation.AnnotationPlugin
 import com.mapbox.maps.plugin.annotation.annotations
 import com.mapbox.maps.plugin.annotation.generated.CircleAnnotationManager
 import com.mapbox.maps.plugin.annotation.generated.CircleAnnotationOptions
+import com.mapbox.maps.plugin.annotation.generated.PolygonAnnotationManager
+import com.mapbox.maps.plugin.annotation.generated.PolygonAnnotationOptions
 import com.mapbox.maps.plugin.annotation.generated.PolylineAnnotationManager
 import com.mapbox.maps.plugin.annotation.generated.PolylineAnnotationOptions
 import com.mapbox.maps.plugin.annotation.generated.createCircleAnnotationManager
+import com.mapbox.maps.plugin.annotation.generated.createPolygonAnnotationManager
 import com.mapbox.maps.plugin.annotation.generated.createPolylineAnnotationManager
 import com.mapbox.maps.plugin.locationcomponent.location2
 import com.mapbox.turf.TurfConstants
@@ -81,6 +85,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     //private val polygonAnnotationManager = annotationApi.createPolygonAnnotationManager()
     private lateinit var polylineAnnotationManager: PolylineAnnotationManager
     private lateinit var  circleAnnotationManager: CircleAnnotationManager
+    private lateinit var polygonAnnotationManager: PolygonAnnotationManager
+    private lateinit var polygonPerimeter: com.mapbox.geojson.Polygon
     private lateinit var lastKnownLocation: Location
 
     //private lateinit var permissionsListener : PermissionsListener
@@ -196,10 +202,37 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                         showLine(fieldPerimeter[n - 2], fieldPerimeter[n - 1])
                         showCircle(fieldPerimeter[n - 1])
                         clickCounter += 1
+                        val poly1 = com.mapbox.geojson.Polygon.fromLngLats(mutableListOf(fieldPerimeter))
                     }
                     4 -> {
                         val n = fieldPerimeter.size
                         showLine(fieldPerimeter[n - 1], fieldPerimeter[0])
+                        clickCounter += 1
+                    }
+                    5 -> {
+                        polylineAnnotationManager.deleteAll()
+                        circleAnnotationManager.deleteAll()
+                        val polygonAnnotationOptions: PolygonAnnotationOptions = PolygonAnnotationOptions()
+                            .withPoints(listOf(fieldPerimeter))
+                            //.withGeometry(bboxPolygon)
+                            // Style the polygon that will be added to the map.
+                            .withFillColor("#ee4e8b")
+                            .withFillOpacity(0.4)
+                        // Add the resulting polygon to the map.
+                        polygonAnnotationManager?.create(polygonAnnotationOptions)
+                        polygonPerimeter = com.mapbox.geojson.Polygon.fromLngLats(mutableListOf(fieldPerimeter))
+
+                        var bboxArray = TurfMeasurement.bbox(polygonPerimeter)
+                        var bboxPolygon = com.mapbox.geojson.Polygon.fromLngLats(mutableListOf(fieldPerimeter))
+                        val points = mutableListOf(fieldPerimeter)
+
+                        val polylineAnnotationOptions = PolylineAnnotationOptions()
+                            .withPoints(getListOfPointsFromBBoxArray(bboxArray) )
+                            .withLineColor("#023020")  //dark green
+                            .withLineWidth(3.0)
+                        polylineAnnotationManager.create(polylineAnnotationOptions)
+
+
                         clickCounter += 1
                     }
                 }
@@ -234,6 +267,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         annotationApi = mapView.annotations
         polylineAnnotationManager = annotationApi.createPolylineAnnotationManager()
         circleAnnotationManager = annotationApi.createCircleAnnotationManager()
+        polygonAnnotationManager= annotationApi.createPolygonAnnotationManager()
 
         /*     mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         mFusedLocationClient.lastLocation.addOnCompleteListener(this) { task ->
@@ -603,6 +637,15 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             .withCircleRadius(5.0)
         circleAnnotationManager.create(circleAnnotationOption)
     }
+
+    fun getListOfPointsFromBBoxArray(bboxArray: DoubleArray):List<com.mapbox.geojson.Point>{
+        val southWest = com.mapbox.geojson.Point.fromLngLat(bboxArray[0],bboxArray[1])
+        val northEast = com.mapbox.geojson.Point.fromLngLat(bboxArray[2],bboxArray[3])
+        val southEast = com.mapbox.geojson.Point.fromLngLat(bboxArray[2],bboxArray[1])
+        val northWest = com.mapbox.geojson.Point.fromLngLat(bboxArray[0],bboxArray[3])
+        return listOf(southWest,northWest,northEast,southEast)
+    }
+
 
   /*  private val onIndicatorBearingChangedListener = OnIndicatorBearingChangedListener {
         mapView.getMapboxMap().setCamera(CameraOptions.Builder().bearing(it).build())
