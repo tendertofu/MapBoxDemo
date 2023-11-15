@@ -41,6 +41,10 @@ dependencies {
     //implementation 'com.mapbox.mapboxsdk:mapbox-android-core:5.0.0'
     //GOOGLE PLAY
     implementation 'com.google.android.gms:play-services-location:21.0.1'
+    //implementation 'io.github.dellisd.spatialk:turf:0.2.1'   //another port of turf.js, supposedly contains intersect
+    //implementation 'io.github.dellisd.spatialk:geojson:0.2.1' //another port of turf.js, supposedly contains intersect
+    implementation 'io.github.piruin:geok:1.2.0'
+
 
     //coroutines
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.6.4'

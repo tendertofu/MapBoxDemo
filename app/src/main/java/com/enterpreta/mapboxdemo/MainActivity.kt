@@ -26,6 +26,7 @@ import com.mapbox.android.core.location.LocationEngineRequest
 import com.mapbox.android.core.permissions.PermissionsListener
 import com.mapbox.android.core.permissions.PermissionsManager
 import com.mapbox.geojson.BoundingBox
+import com.mapbox.geojson.Polygon
 import com.mapbox.maps.CameraOptions
 import com.mapbox.maps.MapView
 import com.mapbox.maps.MapboxMap
@@ -47,7 +48,9 @@ import com.mapbox.turf.TurfConstants
 import com.mapbox.turf.TurfMeasurement
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import me.piruin.geok.LatLng
 import java.util.concurrent.Flow
+import kotlin.math.ceil
 
 
 /* START OF PREVIOUS MAIN ACTIVITY */
@@ -75,17 +78,24 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var azimuthInDegrees_prev: Float = 0f
     private val rotationSensitivity: Float = 5f // the amount of bearing change to make map rotate
     private var fieldPerimeter: MutableList<com.mapbox.geojson.Point> = mutableListOf()
+    private lateinit var bboxArray: DoubleArray
+    private val cellWidth: Double = 10.0  //standard width of a grid cell
+    private val cellHeight: Double = 10.0 // standard height of a grid cell
+    private var bboxCells: MutableList<GridCell> = mutableListOf<GridCell>()
 
     //for testing purposes only. Should not be used for real development
     private lateinit var butTester: Button
     private lateinit var butBounds: Button
     private var clickCounter: Int = 0
+
     //private lateinit var  listOfPoints: List<com.mapbox.geojson.Point>
     private lateinit var annotationApi: AnnotationPlugin
+
     //private val polygonAnnotationManager = annotationApi.createPolygonAnnotationManager()
     private lateinit var polylineAnnotationManager: PolylineAnnotationManager
-    private lateinit var  circleAnnotationManager: CircleAnnotationManager
+    private lateinit var circleAnnotationManager: CircleAnnotationManager
     private lateinit var polygonAnnotationManager: PolygonAnnotationManager
+    private lateinit var gridlineAnnotationManager: PolylineAnnotationManager
     private lateinit var polygonPerimeter: com.mapbox.geojson.Polygon
     private lateinit var lastKnownLocation: Location
 
@@ -151,45 +161,61 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         mapView = findViewById(R.id.mapView)
         textView2 = findViewById(R.id.textView2)
         centerMe = findViewById(R.id.butCenter)
-        butTester=findViewById(R.id.butTester)
+        butTester = findViewById(R.id.butTester)
         butBounds = findViewById(R.id.butBounds)
 
-        centerMe.setOnClickListener{
+        centerMe.setOnClickListener {
             movePuckToCenter(false)
-         /*   polylineAnnotationManager.deleteAll()
-            circleAnnotationManager.deleteAll()*/
+            /*   polylineAnnotationManager.deleteAll()
+               circleAnnotationManager.deleteAll()*/
 
         }
-        butTester.setOnClickListener{
+        butTester.setOnClickListener {
             createPolygonTester()
         }
-        butBounds.setOnClickListener{
+        butBounds.setOnClickListener {
             lateinit var newPoint: com.mapbox.geojson.Point
             getMyLastLocation {
-                when(clickCounter){
-                    0 ->{
-                        newPoint = com.mapbox.geojson.Point.fromLngLat(lastKnownLocation.longitude, lastKnownLocation.latitude)
+                when (clickCounter) {
+                    0 -> {
+                        newPoint = com.mapbox.geojson.Point.fromLngLat(
+                            lastKnownLocation.longitude,
+                            lastKnownLocation.latitude
+                        )
                         fieldPerimeter.add(newPoint)
                         showCircle(newPoint)
-                        showLine(newPoint, fieldPerimeter[fieldPerimeter.size-1])
-                        clickCounter+=1
+                        showLine(newPoint, fieldPerimeter[fieldPerimeter.size - 1])
+                        clickCounter += 1
                     }
-                    1 ->{
-                        newPoint = TurfMeasurement.destination(fieldPerimeter[0],100.0,0.0, TurfConstants.UNIT_METERS)
+
+                    1 -> {
+                        newPoint = TurfMeasurement.destination(
+                            fieldPerimeter[0],
+                            100.0,
+                            0.0,
+                            TurfConstants.UNIT_METERS
+                        )
                         fieldPerimeter.add(newPoint)
-                        val n= fieldPerimeter.size
-                        showLine(fieldPerimeter[n-2],fieldPerimeter[n-1])
-                        showCircle(fieldPerimeter[n-1])
-                        clickCounter+=1
+                        val n = fieldPerimeter.size
+                        showLine(fieldPerimeter[n - 2], fieldPerimeter[n - 1])
+                        showCircle(fieldPerimeter[n - 1])
+                        clickCounter += 1
                     }
-                    2 ->{
-                        newPoint = TurfMeasurement.destination(fieldPerimeter[1],115.0,100.0, TurfConstants.UNIT_METERS)
+
+                    2 -> {
+                        newPoint = TurfMeasurement.destination(
+                            fieldPerimeter[1],
+                            115.0,
+                            100.0,
+                            TurfConstants.UNIT_METERS
+                        )
                         fieldPerimeter.add(newPoint)
-                        val n= fieldPerimeter.size
-                        showLine(fieldPerimeter[n-2],fieldPerimeter[n-1])
-                        showCircle(fieldPerimeter[n-1])
-                        clickCounter+=1
+                        val n = fieldPerimeter.size
+                        showLine(fieldPerimeter[n - 2], fieldPerimeter[n - 1])
+                        showCircle(fieldPerimeter[n - 1])
+                        clickCounter += 1
                     }
+
                     3 -> {
                         newPoint = TurfMeasurement.destination(
                             fieldPerimeter[2],
@@ -202,44 +228,92 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                         showLine(fieldPerimeter[n - 2], fieldPerimeter[n - 1])
                         showCircle(fieldPerimeter[n - 1])
                         clickCounter += 1
-                        val poly1 = com.mapbox.geojson.Polygon.fromLngLats(mutableListOf(fieldPerimeter))
+                        val poly1 =
+                            com.mapbox.geojson.Polygon.fromLngLats(mutableListOf(fieldPerimeter))
                     }
+
                     4 -> {
                         val n = fieldPerimeter.size
                         showLine(fieldPerimeter[n - 1], fieldPerimeter[0])
                         clickCounter += 1
                     }
+
                     5 -> {
                         polylineAnnotationManager.deleteAll()
                         circleAnnotationManager.deleteAll()
-                        val polygonAnnotationOptions: PolygonAnnotationOptions = PolygonAnnotationOptions()
-                            .withPoints(listOf(fieldPerimeter))
-                            //.withGeometry(bboxPolygon)
-                            // Style the polygon that will be added to the map.
-                            .withFillColor("#ee4e8b")
-                            .withFillOpacity(0.4)
+                        val polygonAnnotationOptions: PolygonAnnotationOptions =
+                            PolygonAnnotationOptions()
+                                .withPoints(listOf(fieldPerimeter))
+                                //.withGeometry(bboxPolygon)
+                                // Style the polygon that will be added to the map.
+                                .withFillColor("#ee4e8b")
+                                .withFillOpacity(0.4)
                         // Add the resulting polygon to the map.
                         polygonAnnotationManager?.create(polygonAnnotationOptions)
-                        polygonPerimeter = com.mapbox.geojson.Polygon.fromLngLats(mutableListOf(fieldPerimeter))
+                        polygonPerimeter =
+                            com.mapbox.geojson.Polygon.fromLngLats(mutableListOf(fieldPerimeter))
 
-                        var bboxArray = TurfMeasurement.bbox(polygonPerimeter)
-                        var bboxPolygon = com.mapbox.geojson.Polygon.fromLngLats(mutableListOf(fieldPerimeter))
+                        bboxArray = TurfMeasurement.bbox(polygonPerimeter)
+                        var bboxPolygon =
+                            com.mapbox.geojson.Polygon.fromLngLats(mutableListOf(fieldPerimeter))
                         val points = mutableListOf(fieldPerimeter)
 
                         val polylineAnnotationOptions = PolylineAnnotationOptions()
-                            .withPoints(getListOfPointsFromBBoxArray(bboxArray) )
+                            .withPoints(getListOfPointsFromBBoxArray(bboxArray))
                             .withLineColor("#023020")  //dark green
                             .withLineWidth(3.0)
                         polylineAnnotationManager.create(polylineAnnotationOptions)
 
+                        clickCounter += 1
+                    }
 
+                    6 -> {
+                        val bboxSetOfPoints = getListOfPointsFromBBoxArray(bboxArray)
+                        val bboxHWidth = TurfMeasurement.distance(
+                            bboxSetOfPoints[0],
+                            bboxSetOfPoints[1]
+                        ) * 1000  //southwest to southeast
+                        val bboxHeight = TurfMeasurement.distance(
+                            bboxSetOfPoints[1],
+                            bboxSetOfPoints[2]
+                        ) * 1000 //southeast to northeast
+                        val xDimension = (ceil(bboxHWidth / cellWidth)).toInt()
+                        val yDimension = (ceil(bboxHeight / cellHeight)).toInt()
+
+                        // sub divide bbox into grid cells
+                        var nextNorthWestPoint = getListOfPointsFromBBoxArray(bboxArray)[3]  // corresponds to NW point
+                        lateinit var previousRowSouthWestPoint: com.mapbox.geojson.Point
+                        for (y in 0 until yDimension) {
+                            for (x in 0 until xDimension) {
+                                val thisCell = GridCell(nextNorthWestPoint, cellHeight, cellWidth)
+                                if(x==0){
+                                    //this means the first of the current row.  we need to save because the sw point will be used
+                                    //as the first nw point of the next row
+                                    previousRowSouthWestPoint=thisCell.southWest
+                                }
+                                bboxCells.add(thisCell)
+                                nextNorthWestPoint=thisCell.northEast
+                            }
+                            nextNorthWestPoint=previousRowSouthWestPoint
+                        }
+                        //Toast.makeText(this, "This is the width: $bboxHWidth", Toast.LENGTH_SHORT)
+
+                        //Make line for each GridCell
+                        for (bboxCell in bboxCells) {
+
+                            val polylineAnnotationOptions = PolylineAnnotationOptions()
+                                .withPoints(bboxCell.getListOfPoints())
+                                .withLineColor("#FF0000")
+                                .withLineWidth(3.0)
+                            gridlineAnnotationManager.create(polylineAnnotationOptions)
+                        }
                         clickCounter += 1
                     }
                 }
 
             }
 
-            }
+        }
 
 
         mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
@@ -267,206 +341,204 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         annotationApi = mapView.annotations
         polylineAnnotationManager = annotationApi.createPolylineAnnotationManager()
         circleAnnotationManager = annotationApi.createCircleAnnotationManager()
-        polygonAnnotationManager= annotationApi.createPolygonAnnotationManager()
+        polygonAnnotationManager = annotationApi.createPolygonAnnotationManager()
+        gridlineAnnotationManager = annotationApi.createPolylineAnnotationManager()
 
         /*     mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         mFusedLocationClient.lastLocation.addOnCompleteListener(this) { task ->
             val location: Location = task.result*/
-        movePuckToCenter(true )  //zoom in when starting
+        movePuckToCenter(true)  //zoom in when starting
 
         //mapView.location.addOnIndicatorBearingChangedListener(onIndicatorBearingChangedListener)
 
 
-      /*  var cameraOptions = CameraOptions.Builder()
-            .center(com.mapbox.geojson.Point.fromLngLat(120.994083, 14.519185))
-            .build()
+        /*  var cameraOptions = CameraOptions.Builder()
+              .center(com.mapbox.geojson.Point.fromLngLat(120.994083, 14.519185))
+              .build()
 
-        // Move the camera to the new center point.
-        mapView.getMapboxMap().easeTo(cameraOptions)*/
-
-
-  /*  var cameraOptions = CameraOptions.Builder()
-        .center(com.mapbox.geojson.Point.fromLngLat(120.98478, 14.52758))
-        .build()
-
-    // Move the camera to the new center point.
-    mapView.getMapboxMap().easeTo(cameraOptions)*/
+          // Move the camera to the new center point.
+          mapView.getMapboxMap().easeTo(cameraOptions)*/
 
 
+        /*  var cameraOptions = CameraOptions.Builder()
+              .center(com.mapbox.geojson.Point.fromLngLat(120.98478, 14.52758))
+              .build()
 
+          // Move the camera to the new center point.
+          mapView.getMapboxMap().easeTo(cameraOptions)*/
 
 
         //added by Renan for map to rotate with heading
         //reference https://docs.mapbox.com/android/maps/guides/camera-and-animation/camera/
 
 
-     /*   //  SHOULD BE THE START OF COMMENT OUT
+        /*   //  SHOULD BE THE START OF COMMENT OUT
 
 
-        //mapView.getMapboxMap().loadStyleUri(Style.SATELLITE)
-        //mapView.getMapboxMap().loadStyleUri(Style.MAPBOX_STREETS)
+           //mapView.getMapboxMap().loadStyleUri(Style.SATELLITE)
+           //mapView.getMapboxMap().loadStyleUri(Style.MAPBOX_STREETS)
 
-        //val locationPuck= LocationPuck2D()
-        //val locationPuck = createDefault2DPuck(this@LocationComponentActivity, withBearing = true)
-
-
+           //val locationPuck= LocationPuck2D()
+           //val locationPuck = createDefault2DPuck(this@LocationComponentActivity, withBearing = true)
 
 
-        mapView.getMapboxMap().loadStyleUri(
-            Style.MAPBOX_STREETS,
-            // After the style is loaded, initialize the Location component.
-            object : Style.OnStyleLoaded {
-                override fun onStyleLoaded(style: Style) {
-                    mapView.location2.updateSettings {
-                        enabled = true
-                        pulsingEnabled = true
-                    }
-
-                }
-            }
-        )
-
-        // create a polygon layer
-
-        //val polygonCoordinates = ArrayList<>()
-        //polygonCoordinates.add(LatLong)
 
 
-        //var points = ArrayList<com.mapbox.geojson.Point>()
-        //points.add(com.mapbox.geojson.Point.fromLngLat(120.98478,14.52758))
-        //points.add(com.mapbox.geojson.Point.fromLngLat(120.98009,14.52351))
-        //points.add(com.mapbox.geojson.Point.fromLngLat(120.98582,14.52284))
+           mapView.getMapboxMap().loadStyleUri(
+               Style.MAPBOX_STREETS,
+               // After the style is loaded, initialize the Location component.
+               object : Style.OnStyleLoaded {
+                   override fun onStyleLoaded(style: Style) {
+                       mapView.location2.updateSettings {
+                           enabled = true
+                           pulsingEnabled = true
+                       }
 
-        // Create an instance of the Annotation API and get the polygon manager.
-        val annotationApi = mapView.annotations
-        val polygonAnnotationManager = annotationApi.createPolygonAnnotationManager()
-        //polygonAnnotationManager.
+                   }
+               }
+           )
 
-        // Define a list of geographic coordinates to be connected.
-        val points = listOf(
-            listOf(
-                com.mapbox.geojson.Point.fromLngLat(120.98478,14.52758),
-                com.mapbox.geojson.Point.fromLngLat(120.97996,14.52393),
-                com.mapbox.geojson.Point.fromLngLat(120.98582,14.52284)
-            )
-        )
+           // create a polygon layer
 
-        val testPolygon = com.mapbox.geojson.Polygon.fromLngLats(points)
-        val polyArea = TurfMeasurement.area(testPolygon)
-        textView2.text= polyArea.toInt().toString() + " square meters"
+           //val polygonCoordinates = ArrayList<>()
+           //polygonCoordinates.add(LatLong)
 
 
-        // Set options for the resulting fill layer.
-        val polygonAnnotationOptions: PolygonAnnotationOptions = PolygonAnnotationOptions()
-            .withPoints(points)
-            // Style the polygon that will be added to the map.
-            .withFillColor("#ee4e8b")
-            .withFillOpacity(0.4)
-            // Add the resulting polygon to the map.
-        polygonAnnotationManager?.create(polygonAnnotationOptions)
+           //var points = ArrayList<com.mapbox.geojson.Point>()
+           //points.add(com.mapbox.geojson.Point.fromLngLat(120.98478,14.52758))
+           //points.add(com.mapbox.geojson.Point.fromLngLat(120.98009,14.52351))
+           //points.add(com.mapbox.geojson.Point.fromLngLat(120.98582,14.52284))
 
-        //change color to purple
-        polygonAnnotationManager.annotations[0].fillColorString="#0000FF"
+           // Create an instance of the Annotation API and get the polygon manager.
+           val annotationApi = mapView.annotations
+           val polygonAnnotationManager = annotationApi.createPolygonAnnotationManager()
+           //polygonAnnotationManager.
 
+           // Define a list of geographic coordinates to be connected.
+           val points = listOf(
+               listOf(
+                   com.mapbox.geojson.Point.fromLngLat(120.98478,14.52758),
+                   com.mapbox.geojson.Point.fromLngLat(120.97996,14.52393),
+                   com.mapbox.geojson.Point.fromLngLat(120.98582,14.52284)
+               )
+           )
 
-        var origPoint = com.mapbox.geojson.Point.fromLngLat(120.98167,14.52362)
-        var origPolygon = com.mapbox.geojson.Polygon.fromLngLats(points)
-        var answer: Boolean = TurfJoins.inside(origPoint, origPolygon)
-
-        //var featureCollection = listOf(origPoint,origPolygon)
-
-        //TurfJoins.pointsWithinPolygon()
-
-        var thisPolygon = com.mapbox.geojson.Polygon.fromLngLats(points)
-        var bboxArray = TurfMeasurement.bbox(thisPolygon)
-
-        val southWest = com.mapbox.geojson.Point.fromLngLat(bboxArray[0],bboxArray[1])
-        val northEast = com.mapbox.geojson.Point.fromLngLat(bboxArray[2],bboxArray[3])
-        val southEast = com.mapbox.geojson.Point.fromLngLat(bboxArray[2],bboxArray[1])
-        val northWest = com.mapbox.geojson.Point.fromLngLat(bboxArray[0],bboxArray[3])
-
-        val points2 = listOf(
-            listOf(
-              southWest,northWest,northEast,southEast
-            )
-        )
-        // Set options for the resulting fill layer.
-        val polygonAnnotationOptions2: PolygonAnnotationOptions = PolygonAnnotationOptions()
-            .withPoints(points2)
-            // Style the polygon that will be added to the map.
-            .withFillColor("#ee4e8b")
-            //.withFillOpacity(0.0)
-            .withFillOpacity(0.4)
-            .withFillOutlineColor("#FF0000")
+           val testPolygon = com.mapbox.geojson.Polygon.fromLngLats(points)
+           val polyArea = TurfMeasurement.area(testPolygon)
+           textView2.text= polyArea.toInt().toString() + " square meters"
 
 
-        //polygonAnnotationManager?.create(polygonAnnotationOptions2)
+           // Set options for the resulting fill layer.
+           val polygonAnnotationOptions: PolygonAnnotationOptions = PolygonAnnotationOptions()
+               .withPoints(points)
+               // Style the polygon that will be added to the map.
+               .withFillColor("#ee4e8b")
+               .withFillOpacity(0.4)
+               // Add the resulting polygon to the map.
+           polygonAnnotationManager?.create(polygonAnnotationOptions)
 
-        //val listOfPoints: List<com.mapbox.geojson.Point> = listOf(southWest,northWest,northEast,southEast,southWest)
-        val listOfPoints = points2[0]
-
-        val polyLineAnnotationOptions: PolylineAnnotationOptions = PolylineAnnotationOptions()
-            .withPoints(listOfPoints)
-            .withLineColor("#FF0000")
-            .withLineWidth(2.0)
-
-       val polyLineAnnotationManager = annotationApi.createPolylineAnnotationManager()
-        polyLineAnnotationManager.create(polyLineAnnotationOptions)
-
-        val offsetPoint = TurfMeasurement.destination(northWest,10.0,90.0, "meters")
-
-        //add a point marker
-        // Create an instance of the Annotation API and get the PointAnnotationManager.
-        bitmapFromDrawableRes(
-            this@MainActivity,
-            R.drawable.red_marker
-        )?.let {
-            val annotationApi = mapView?.annotations
-            val pointAnnotationManager = annotationApi?.createPointAnnotationManager()
-        // Set options for the resulting symbol layer.
-            val pointAnnotationOptions: PointAnnotationOptions = PointAnnotationOptions()
-        // Define a geographic coordinate.
-                .withPoint(offsetPoint)
-        // Specify the bitmap you assigned to the point annotation
-        // The bitmap will be added to map style automatically.
-                .withIconImage(it)
-        // Add the resulting pointAnnotation to the map.
-            pointAnnotationManager?.create(pointAnnotationOptions)
-        }
+           //change color to purple
+           polygonAnnotationManager.annotations[0].fillColorString="#0000FF"
 
 
-    }
+           var origPoint = com.mapbox.geojson.Point.fromLngLat(120.98167,14.52362)
+           var origPolygon = com.mapbox.geojson.Polygon.fromLngLats(points)
+           var answer: Boolean = TurfJoins.inside(origPoint, origPolygon)
 
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>,
-                                            grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        permissionsManager.onRequestPermissionsResult(requestCode, permissions, grantResults)
-    }
+           //var featureCollection = listOf(origPoint,origPolygon)
 
-    private fun bitmapFromDrawableRes(context: Context, @DrawableRes resourceId: Int) =
-        convertDrawableToBitmap(AppCompatResources.getDrawable(context, resourceId))
+           //TurfJoins.pointsWithinPolygon()
 
-    private fun convertDrawableToBitmap(sourceDrawable: Drawable?): Bitmap? {
-        if (sourceDrawable == null) {
-            return null
-        }
-        return if (sourceDrawable is BitmapDrawable) {
-            sourceDrawable.bitmap
-        } else {
-    // copying drawable object to not manipulate on the same reference
-            val constantState = sourceDrawable.constantState ?: return null
-            val drawable = constantState.newDrawable().mutate()
-            val bitmap: Bitmap = Bitmap.createBitmap(
-                drawable.intrinsicWidth, drawable.intrinsicHeight,
-                Bitmap.Config.ARGB_8888
-            )
-            val canvas = Canvas(bitmap)
-            drawable.setBounds(0, 0, canvas.width, canvas.height)
-            drawable.draw(canvas)
-            bitmap
-        }
+           var thisPolygon = com.mapbox.geojson.Polygon.fromLngLats(points)
+           var bboxArray = TurfMeasurement.bbox(thisPolygon)
 
-      */  //SHOULD MARK END OF COMMENT OUT
+           val southWest = com.mapbox.geojson.Point.fromLngLat(bboxArray[0],bboxArray[1])
+           val northEast = com.mapbox.geojson.Point.fromLngLat(bboxArray[2],bboxArray[3])
+           val southEast = com.mapbox.geojson.Point.fromLngLat(bboxArray[2],bboxArray[1])
+           val northWest = com.mapbox.geojson.Point.fromLngLat(bboxArray[0],bboxArray[3])
+
+           val points2 = listOf(
+               listOf(
+                 southWest,northWest,northEast,southEast
+               )
+           )
+           // Set options for the resulting fill layer.
+           val polygonAnnotationOptions2: PolygonAnnotationOptions = PolygonAnnotationOptions()
+               .withPoints(points2)
+               // Style the polygon that will be added to the map.
+               .withFillColor("#ee4e8b")
+               //.withFillOpacity(0.0)
+               .withFillOpacity(0.4)
+               .withFillOutlineColor("#FF0000")
+
+
+           //polygonAnnotationManager?.create(polygonAnnotationOptions2)
+
+           //val listOfPoints: List<com.mapbox.geojson.Point> = listOf(southWest,northWest,northEast,southEast,southWest)
+           val listOfPoints = points2[0]
+
+           val polyLineAnnotationOptions: PolylineAnnotationOptions = PolylineAnnotationOptions()
+               .withPoints(listOfPoints)
+               .withLineColor("#FF0000")
+               .withLineWidth(2.0)
+
+          val polyLineAnnotationManager = annotationApi.createPolylineAnnotationManager()
+           polyLineAnnotationManager.create(polyLineAnnotationOptions)
+
+           val offsetPoint = TurfMeasurement.destination(northWest,10.0,90.0, "meters")
+
+           //add a point marker
+           // Create an instance of the Annotation API and get the PointAnnotationManager.
+           bitmapFromDrawableRes(
+               this@MainActivity,
+               R.drawable.red_marker
+           )?.let {
+               val annotationApi = mapView?.annotations
+               val pointAnnotationManager = annotationApi?.createPointAnnotationManager()
+           // Set options for the resulting symbol layer.
+               val pointAnnotationOptions: PointAnnotationOptions = PointAnnotationOptions()
+           // Define a geographic coordinate.
+                   .withPoint(offsetPoint)
+           // Specify the bitmap you assigned to the point annotation
+           // The bitmap will be added to map style automatically.
+                   .withIconImage(it)
+           // Add the resulting pointAnnotation to the map.
+               pointAnnotationManager?.create(pointAnnotationOptions)
+           }
+
+
+       }
+
+       override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>,
+                                               grantResults: IntArray) {
+           super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+           permissionsManager.onRequestPermissionsResult(requestCode, permissions, grantResults)
+       }
+
+       private fun bitmapFromDrawableRes(context: Context, @DrawableRes resourceId: Int) =
+           convertDrawableToBitmap(AppCompatResources.getDrawable(context, resourceId))
+
+       private fun convertDrawableToBitmap(sourceDrawable: Drawable?): Bitmap? {
+           if (sourceDrawable == null) {
+               return null
+           }
+           return if (sourceDrawable is BitmapDrawable) {
+               sourceDrawable.bitmap
+           } else {
+       // copying drawable object to not manipulate on the same reference
+               val constantState = sourceDrawable.constantState ?: return null
+               val drawable = constantState.newDrawable().mutate()
+               val bitmap: Bitmap = Bitmap.createBitmap(
+                   drawable.intrinsicWidth, drawable.intrinsicHeight,
+                   Bitmap.Config.ARGB_8888
+               )
+               val canvas = Canvas(bitmap)
+               drawable.setBounds(0, 0, canvas.width, canvas.height)
+               drawable.draw(canvas)
+               bitmap
+           }
+
+         */  //SHOULD MARK END OF COMMENT OUT
 
     }
 
@@ -497,15 +569,20 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         }
 
         if (lastAccelerometerSet && lastMagnetometerSet) {
-            SensorManager.getRotationMatrix(rotationMatrix, null, lastAccelerometer, lastMagnetometer);
+            SensorManager.getRotationMatrix(
+                rotationMatrix,
+                null,
+                lastAccelerometer,
+                lastMagnetometer
+            );
             SensorManager.getOrientation(rotationMatrix, orientation);
 
             azimuthInRadians = orientation[0]
             azimuthInDegrees = (Math.toDegrees(azimuthInRadians.toDouble()) + 360).toFloat() % 360
 
-            if(Math.abs(azimuthInDegrees-azimuthInDegrees_prev)> rotationSensitivity) {
-                azimuthInDegrees_prev=(azimuthInDegrees+azimuthInDegrees_prev)/2
-                textView2.text=azimuthInDegrees.toString()
+            if (Math.abs(azimuthInDegrees - azimuthInDegrees_prev) > rotationSensitivity) {
+                azimuthInDegrees_prev = (azimuthInDegrees + azimuthInDegrees_prev) / 2
+                textView2.text = azimuthInDegrees.toString()
                 var newCameraPosition = CameraOptions.Builder()
                     .bearing(azimuthInDegrees.toDouble())
                     .build()
@@ -540,18 +617,27 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         mFusedLocationClient.lastLocation.addOnCompleteListener(this) { task ->
             var location: Location = task.result
-            if(zoomStatus) {
+            if (zoomStatus) {
                 var cameraOptions = CameraOptions.Builder()
-                    .center(com.mapbox.geojson.Point.fromLngLat(location.longitude, location.latitude))
+                    .center(
+                        com.mapbox.geojson.Point.fromLngLat(
+                            location.longitude,
+                            location.latitude
+                        )
+                    )
                     .zoom(20.0)
                     .build()
                 // Move the camera to the new center point.
                 mapView.getMapboxMap().easeTo(cameraOptions)
-            }else
-            {
+            } else {
                 //NO Zoom
                 var cameraOptions = CameraOptions.Builder()
-                    .center(com.mapbox.geojson.Point.fromLngLat(location.longitude, location.latitude))
+                    .center(
+                        com.mapbox.geojson.Point.fromLngLat(
+                            location.longitude,
+                            location.latitude
+                        )
+                    )
                     .build()
                 // Move the camera to the new center point.
                 mapView.getMapboxMap().easeTo(cameraOptions)
@@ -559,13 +645,13 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         }
     }
 
-    fun createPolygonTester(){
+    fun createPolygonTester() {
         val points2 =
-            listOf (
+            listOf(
                 listOf(
-                    com.mapbox.geojson.Point.fromLngLat(120.99833,14.51943),
-                    com.mapbox.geojson.Point.fromLngLat(120.99692,14.52203),
-                    com.mapbox.geojson.Point.fromLngLat(120.99402,14.52290)
+                    com.mapbox.geojson.Point.fromLngLat(120.99833, 14.51943),
+                    com.mapbox.geojson.Point.fromLngLat(120.99692, 14.52203),
+                    com.mapbox.geojson.Point.fromLngLat(120.99402, 14.52290)
                 )
             )
 
@@ -580,15 +666,18 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         //add circle
         val circleAnnotationOption = CircleAnnotationOptions()
             .withCircleColor("#FF0000")
-             .withPoint(  com.mapbox.geojson.Point.fromLngLat(120.99833,14.51943))
+            .withPoint(com.mapbox.geojson.Point.fromLngLat(120.99833, 14.51943))
             //.withPoint(  com.mapbox.geojson.Point.fromLngLat(120.99692,14.52203))
             .withCircleRadius(5.0)
         circleAnnotationManager.create(circleAnnotationOption)
     }
 
-    fun getMyLastLocation(finishFunction: ()-> Unit) {
-       var myPresentPoint = com.mapbox.geojson.Point.fromLngLat(0.0,0.0)
-        var isLocationReturned: Boolean= false;
+    fun getMyLastLocation(finishFunction: () -> Unit) {
+        //This function is designed to update the lastKnownLocation variable
+        //and accept the steps (in the form of a function parameter called finishFunction)
+        //on what to do with the lastKnownLocation
+        var myPresentPoint = com.mapbox.geojson.Point.fromLngLat(0.0, 0.0)
+        var isLocationReturned: Boolean = false;
         if (ActivityCompat.checkSelfPermission(
                 this,
                 Manifest.permission.ACCESS_FINE_LOCATION
@@ -607,16 +696,16 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
             //return
         }
-                mFusedLocationClient.lastLocation.addOnCompleteListener(this) { task ->
-                    var location: Location = task.result
-                    lastKnownLocation = location
-                    finishFunction()
-                }
+        mFusedLocationClient.lastLocation.addOnCompleteListener(this) { task ->
+            var location: Location = task.result
+            lastKnownLocation = location
+            finishFunction()
+        }
     }
 
-    fun showLine(point1: com.mapbox.geojson.Point, point2: com.mapbox.geojson.Point){
+    fun showLine(point1: com.mapbox.geojson.Point, point2: com.mapbox.geojson.Point) {
         val points =
-            listOf (
+            listOf(
                 listOf(
                     point1,
                     point2
@@ -629,27 +718,29 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             .withLineWidth(3.0)
         polylineAnnotationManager.create(polylineAnnotationOptions)
     }
-    fun showCircle(point1: com.mapbox.geojson.Point){
+
+    fun showCircle(point1: com.mapbox.geojson.Point) {
         val circleAnnotationOption = CircleAnnotationOptions()
             .withCircleColor("#FF0000")
-            .withPoint(  point1)
+            .withPoint(point1)
             //.withPoint(  com.mapbox.geojson.Point.fromLngLat(120.99692,14.52203))
             .withCircleRadius(5.0)
         circleAnnotationManager.create(circleAnnotationOption)
     }
 
-    fun getListOfPointsFromBBoxArray(bboxArray: DoubleArray):List<com.mapbox.geojson.Point>{
-        val southWest = com.mapbox.geojson.Point.fromLngLat(bboxArray[0],bboxArray[1])
-        val northEast = com.mapbox.geojson.Point.fromLngLat(bboxArray[2],bboxArray[3])
-        val southEast = com.mapbox.geojson.Point.fromLngLat(bboxArray[2],bboxArray[1])
-        val northWest = com.mapbox.geojson.Point.fromLngLat(bboxArray[0],bboxArray[3])
-        return listOf(southWest,northWest,northEast,southEast)
+    fun getListOfPointsFromBBoxArray(bboxArray: DoubleArray): List<com.mapbox.geojson.Point> {
+        val southWest = com.mapbox.geojson.Point.fromLngLat(bboxArray[0], bboxArray[1])
+        val northEast = com.mapbox.geojson.Point.fromLngLat(bboxArray[2], bboxArray[3])
+        val southEast = com.mapbox.geojson.Point.fromLngLat(bboxArray[2], bboxArray[1])
+        val northWest = com.mapbox.geojson.Point.fromLngLat(bboxArray[0], bboxArray[3])
+        //return listOf(southWest, northWest, northEast, southEast)
+        return listOf(southWest, southEast, northEast, northWest)
     }
 
 
-  /*  private val onIndicatorBearingChangedListener = OnIndicatorBearingChangedListener {
-        mapView.getMapboxMap().setCamera(CameraOptions.Builder().bearing(it).build())
-    }*/
+    /*  private val onIndicatorBearingChangedListener = OnIndicatorBearingChangedListener {
+          mapView.getMapboxMap().setCamera(CameraOptions.Builder().bearing(it).build())
+      }*/
 
 }
 
