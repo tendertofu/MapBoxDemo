@@ -48,6 +48,7 @@ import com.mapbox.turf.TurfConstants
 import com.mapbox.turf.TurfMeasurement
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import me.piruin.geok.Datum
 import me.piruin.geok.LatLng
 import java.util.concurrent.Flow
 import kotlin.math.ceil
@@ -82,6 +83,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private val cellWidth: Double = 10.0  //standard width of a grid cell
     private val cellHeight: Double = 10.0 // standard height of a grid cell
     private var bboxCells: MutableList<GridCell> = mutableListOf<GridCell>()
+    private var fieldCells:  MutableList<GridCell> = mutableListOf<GridCell>() //List of cells for which at
+                                                                                // least 50% of its area is inside field polygon
 
     //for testing purposes only. Should not be used for real development
     private lateinit var butTester: Button
@@ -307,6 +310,54 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                                 .withLineWidth(3.0)
                             gridlineAnnotationManager.create(polylineAnnotationOptions)
                         }
+
+                        clickCounter += 1
+                    }
+
+                    7 -> {
+                        //WE NEED TO USE GEOK LIBRARY AS IT HAS THE POLYGON INTERSECTION FUNCTIONS THAT WE NEED
+                        var listGeokLatLong = mutableListOf<LatLng>()
+                        for(_point in fieldPerimeter){
+                            //make a geok list of LatLong so we can make a geok polygon
+                            listGeokLatLong.add(LatLng(_point.latitude(),_point.longitude()))
+                        }
+                        val fieldPolygon_geok = me.piruin.geok.geometry.Polygon(listGeokLatLong)
+                        val areaOfFieldPolygon_geok = fieldPolygon_geok.area()
+                        var _cellArea: Double = 0.0
+
+                        for (_cell in bboxCells) {
+                            val _cellPolygon_geok = me.piruin.geok.geometry.Polygon(
+                                listOf(
+                                    LatLng(_cell.southWest.latitude(), _cell.southWest.longitude()),
+                                    LatLng(_cell.southEast.latitude(), _cell.southEast.longitude()),
+                                    LatLng(_cell.northEast.latitude(), _cell.northEast.longitude()),
+                                    LatLng(_cell.northWest.latitude(), _cell.northWest.longitude())
+                                )
+                            )
+                            if (_cellArea == 0.0) { _cellArea = _cellPolygon_geok.area() }
+
+                            val _cellIntersection = fieldPolygon_geok.intersectionWith(_cellPolygon_geok)
+                            //_cellArea = _cellPolygon_geok.area()
+                            if(_cellIntersection!=null){
+                                if(_cellIntersection.area()/_cellArea >= 0.50){
+                                    fieldCells.add(_cell)
+                                }
+                            }
+
+                        }
+
+                        gridlineAnnotationManager.deleteAll()  //clear prevbious grid lines
+
+                        for (_cell in fieldCells) {
+
+                            val polylineAnnotationOptions = PolylineAnnotationOptions()
+                                .withPoints(_cell.getListOfPoints())
+                                .withLineColor("#FF0000")
+                                .withLineWidth(3.0)
+                            gridlineAnnotationManager.create(polylineAnnotationOptions)
+                        }
+                        val test= io.github.dellisd.spatialk.geojson.Polygon()
+
                         clickCounter += 1
                     }
                 }
