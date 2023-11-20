@@ -21,12 +21,15 @@ class GridCell (northWest: com.mapbox.geojson.Point, height: Double, width: Doub
         this.width=width
     }
 
-    fun getListOfPoints(): List<com.mapbox.geojson.Point>{
+    fun getPointsForPolygon(): List<com.mapbox.geojson.Point>{
         return listOf(this.southWest, this.southEast,this.northEast,this.northWest)
+    }
+    fun getPointsForLine(): List<com.mapbox.geojson.Point>{
+        return listOf(this.southWest, this.southEast,this.northEast,this.northWest,this.southWest)
     }
 
     fun getCenter(): com.mapbox.geojson.Point{
-        val pointMidway = TurfMeasurement.destination(northEast,this.width/2.0, 90.0, TurfConstants.UNIT_METERS)
+        val pointMidway = TurfMeasurement.destination(northWest,this.width/2.0, 90.0, TurfConstants.UNIT_METERS)
         return TurfMeasurement.destination(pointMidway, this.height/2.0, 180.0, TurfConstants.UNIT_METERS )
     }
 }

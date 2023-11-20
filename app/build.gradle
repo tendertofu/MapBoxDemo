@@ -1,6 +1,7 @@
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
+    id 'kotlin-kapt'
 }
 
 android {
@@ -24,15 +25,19 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+        //sourceCompatibility JavaVersion.VERSION_1_8
+        //targetCompatibility JavaVersion.VERSION_1_8
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
     }
     kotlinOptions {
-        jvmTarget = '1.8'
+        //jvmTarget = '1.8'
+        jvmTarget = '17'
     }
 }
 
 dependencies {
+    def room_version = "2.5.0"
 
     implementation 'com.mapbox.maps:android:10.16.1'
     implementation 'com.mapbox.mapboxsdk:mapbox-sdk-turf:6.13.0'
@@ -41,15 +46,20 @@ dependencies {
     //implementation 'com.mapbox.mapboxsdk:mapbox-android-core:5.0.0'
     //GOOGLE PLAY
     implementation 'com.google.android.gms:play-services-location:21.0.1'
-    implementation 'io.github.dellisd.spatialk:turf:0.2.1'   //another port of turf.js, supposedly contains intersect
-    implementation 'io.github.dellisd.spatialk:geojson:0.2.1' //another port of turf.js, supposedly contains intersect
-    implementation 'io.github.piruin:geok:1.2.0'  //This package is needed to calculate intersection https://github.com/piruin/geok
-
 
     //coroutines
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.6.4'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.6.4'
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
+
+    // Room
+    implementation "androidx.room:room-ktx:$room_version"
+    kapt "androidx.room:room-compiler:$room_version"
+
+    //The below dependencies are from the ROOM Turorial by Stevdza-San
+    //kapt "androidx.room:room-compiler:2.2.5"
+    //implementation "androidx.room:room-ktx:2.2.5"
+    //androidTestImplementation "androidx.room:room-testing:2.2.5"
 
 
     implementation 'androidx.core:core-ktx:1.8.0'
