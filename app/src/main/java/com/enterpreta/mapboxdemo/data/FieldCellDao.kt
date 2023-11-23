@@ -8,13 +8,13 @@ import androidx.room.Upsert
 @Dao
 interface FieldCellDao {
     @Upsert
-    suspend fun upsertFieldCell(fieldCell: FieldCell)
+    fun upsert(fieldCell: FieldCell)
 
     @Delete
-    suspend fun deleteFieldCell(fieldCell: FieldCell)
+    fun delete(fieldCell: FieldCell)
 
     @Query("SELECT * FROM FieldCell ORDER BY id ASC")
-    fun getContactsOrderedByFirstName(): List<FieldCell>
+    fun getAllFieldCells(): List<FieldCell>
 
     @Query("DELETE FROM FieldCell")
     fun deleteAll(): Unit

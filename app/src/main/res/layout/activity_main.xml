@@ -7,15 +7,39 @@
     tools:context=".MainActivity">
 
     <Button
-        android:id="@+id/btnSecondActivity"
+        android:id="@+id/btnOfflineDownload"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Second Activity"
+        android:text="Offline Download"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="@+id/mapView"
         app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintVertical_bias="0.01999998" />
+        app:layout_constraintVertical_bias="0.07999998" />
+
+    <Button
+        android:id="@+id/btnClear"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Clear"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHorizontal_bias="0.79"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintVertical_bias="0.00999999" />
+
+    <Button
+        android:id="@+id/btnRestore"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Restore"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHorizontal_bias="0.2"
+        app:layout_constraintStart_toStartOf="@+id/mapView"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintVertical_bias="0.00999999" />
 
     <Button
         android:id="@+id/butBounds"
@@ -24,18 +48,19 @@
         android:text="Bounds"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHorizontal_bias="0.37"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintVertical_bias="0.96" />
 
     <Button
-        android:id="@+id/butTester"
+        android:id="@+id/btnControlPoint"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Tester"
+        android:text="Control Point"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintHorizontal_bias="0.85"
+        app:layout_constraintHorizontal_bias="0.92"
         app:layout_constraintStart_toStartOf="@+id/mapView"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintVertical_bias="0.96" />
@@ -47,7 +72,7 @@
         android:text="Center"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintHorizontal_bias="0.13"
+        app:layout_constraintHorizontal_bias="0.04"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintVertical_bias="0.96" />

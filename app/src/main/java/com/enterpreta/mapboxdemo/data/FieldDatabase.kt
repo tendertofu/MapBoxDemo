@@ -6,9 +6,10 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 //This class makes a singleton of the database to avoid waste of memory when accessing it
-@Database(entities = [FieldCell::class], version = 1, exportSchema = false)
+@Database(entities = [FieldCell::class,ControlPoint::class], version = 1, exportSchema = false)
 abstract class FieldDatabase : RoomDatabase() {
     abstract fun fieldCellDao(): FieldCellDao
+    abstract fun controlPointDao(): ControlPointDao
     companion object {
         @Volatile
         private var INSTANCE: FieldDatabase? = null

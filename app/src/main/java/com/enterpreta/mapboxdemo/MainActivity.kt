@@ -2,10 +2,8 @@ package com.enterpreta.mapboxdemo
 
 //for compass sensor
 import android.Manifest
-import android.R.attr.data
 import android.annotation.SuppressLint
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.hardware.Sensor
@@ -18,11 +16,12 @@ import android.os.PersistableBundle
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
-import androidx.lifecycle.lifecycleScope
 import androidx.room.Room
-import com.enterpreta.mapboxdemo.data.FieldCell
+import com.enterpreta.mapboxdemo.data.ControlPoint
+import com.enterpreta.mapboxdemo.data.ControlPointDao
 import com.enterpreta.mapboxdemo.data.FieldCellDao
 import com.enterpreta.mapboxdemo.data.FieldDatabase
 import com.google.android.gms.location.FusedLocationProviderClient
@@ -31,14 +30,25 @@ import com.mapbox.android.core.location.LocationEngineProvider
 import com.mapbox.android.core.location.LocationEngineRequest
 import com.mapbox.android.core.permissions.PermissionsListener
 import com.mapbox.android.core.permissions.PermissionsManager
-import com.mapbox.geojson.BoundingBox
-import com.mapbox.geojson.Polygon
+import com.mapbox.bindgen.Expected
+import com.mapbox.bindgen.Value
+import com.mapbox.common.NetworkRestriction
+import com.mapbox.common.TileDataDomain
+import com.mapbox.common.TileRegion
+import com.mapbox.common.TileRegionError
+import com.mapbox.common.TileRegionLoadOptions
+import com.mapbox.common.TileStore
+import com.mapbox.common.TileStoreOptions
 import com.mapbox.maps.CameraOptions
 import com.mapbox.maps.CameraState
+import com.mapbox.maps.GlyphsRasterizationMode
+import com.mapbox.maps.MapInitOptions
 import com.mapbox.maps.MapView
 import com.mapbox.maps.MapboxMap
+import com.mapbox.maps.OfflineManager
 import com.mapbox.maps.Style
-import com.mapbox.maps.plugin.animation.camera
+import com.mapbox.maps.StylePackLoadOptions
+import com.mapbox.maps.TilesetDescriptorOptions
 import com.mapbox.maps.plugin.animation.easeTo
 import com.mapbox.maps.plugin.annotation.AnnotationPlugin
 import com.mapbox.maps.plugin.annotation.annotations
@@ -52,12 +62,8 @@ import com.mapbox.maps.plugin.annotation.generated.createCircleAnnotationManager
 import com.mapbox.maps.plugin.annotation.generated.createPolygonAnnotationManager
 import com.mapbox.maps.plugin.annotation.generated.createPolylineAnnotationManager
 import com.mapbox.maps.plugin.locationcomponent.location2
-import com.mapbox.turf.TurfConstants
 import com.mapbox.turf.TurfJoins
 import com.mapbox.turf.TurfMeasurement
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import java.util.concurrent.Flow
 import kotlin.math.ceil
 
 
@@ -87,34 +93,36 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private val rotationSensitivity: Float = 5f // the amount of bearing change to make map rotate
     private var fieldPerimeter: MutableList<com.mapbox.geojson.Point> = mutableListOf()
     private lateinit var bboxArray: DoubleArray
-    private val cellWidth: Double = 10.0  //standard width of a grid cell
-    private val cellHeight: Double = 10.0 // standard height of a grid cell
+
+    //private val cellWidth: Double = 10.0  //standard width of a field cell
+    //private val cellHeight: Double = 10.0 // standard height of a field cell
+    private val cellSide: Double = 15.0 //standard width or height of a field cell
     private var bboxCells: MutableList<GridCell> = mutableListOf<GridCell>()
-    private var fieldCells:  MutableList<GridCell> = mutableListOf<GridCell>() //List of cells for which at
-                                                                                // least 50% of its area is inside field polygon
+    private var fieldCells: MutableList<GridCell> =
+        mutableListOf<GridCell>() //List of cells for which at
+    // least 50% of its area is inside field polygon
 
     //database
     private lateinit var db: FieldDatabase
-
-    //private lateinit var fieldCellDao = db.fieldCellDao()
-    private lateinit var  fieldCellDao: FieldCellDao
+    private lateinit var fieldCellDao: FieldCellDao
+    private lateinit var controlPointDao: ControlPointDao
 
     //for testing purposes only. Should not be used for real development
-    private lateinit var butTester: Button
+    private lateinit var btnControlPoint: Button
     private lateinit var butBounds: Button
-    private lateinit var btnSecondActivity: Button
+    private lateinit var btnRestore: Button
+    private lateinit var btnOfflineDownload: Button
     private var clickCounter: Int = 0
 
     //to save state for resume
-    private lateinit var  cameraState: CameraState
+    private lateinit var cameraState: CameraState
 
-    //private lateinit var  listOfPoints: List<com.mapbox.geojson.Point>
     private lateinit var annotationApi: AnnotationPlugin
 
     //private val polygonAnnotationManager = annotationApi.createPolygonAnnotationManager()
     private lateinit var polylineAnnotationManager: PolylineAnnotationManager
     private lateinit var circleAnnotationManager: CircleAnnotationManager
-    //private lateinit var polygonAnnotationManager: PolygonAnnotationManager
+    private lateinit var polygonAnnotationManager: PolygonAnnotationManager
     private lateinit var gridlineAnnotationManager: PolylineAnnotationManager
     private lateinit var polygonPerimeter: com.mapbox.geojson.Polygon
     private lateinit var lastKnownLocation: Location
@@ -178,191 +186,64 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             permissionsManager.requestLocationPermissions(this)
         }
 
-        val db = Room.databaseBuilder(
-            this,
-            FieldDatabase::class.java,"FieldDatabase"
+
+        //INSTANTIATE ROOM RELATED VARIABLES
+        db = Room.databaseBuilder(
+            applicationContext,
+            FieldDatabase::class.java, "FieldDatabase"
         ).allowMainThreadQueries().build()
         fieldCellDao = db.fieldCellDao()
-        val numRecs = fieldCellDao.count()
+        controlPointDao = db.controlPointDao()
+
+        val numControlPointRecs = controlPointDao.count()
 
         mapView = findViewById(R.id.mapView)
         textView2 = findViewById(R.id.textView2)
         centerMe = findViewById(R.id.butCenter)
-        butTester = findViewById(R.id.butTester)
+        btnControlPoint = findViewById(R.id.btnControlPoint)
         butBounds = findViewById(R.id.butBounds)
-        btnSecondActivity = findViewById(R.id.btnSecondActivity)
+        btnRestore = findViewById(R.id.btnRestore)
+        btnOfflineDownload= findViewById(R.id.btnOfflineDownload)
 
         centerMe.setOnClickListener {
             movePuckToCenter(false)
         }
-        butTester.setOnClickListener {
-            createPolygonTester()
+        btnControlPoint.setOnClickListener {
+
+            val alertDialog: AlertDialog.Builder = AlertDialog.Builder(this)
+            // alertDialog.setTitle("Add Control Point")
+            alertDialog.setMessage("Record a CONTROL POINT at current location?")
+            alertDialog.setPositiveButton(
+                "Yes"
+            ) { _, _ ->
+                Toast.makeText(
+                    this@MainActivity,
+                    "I would have made CONTROL POINT",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+            alertDialog.setNegativeButton(
+                "Cancel"
+            ) { _, _ -> }
+            val alert: AlertDialog = alertDialog.create()
+            alert.setCanceledOnTouchOutside(false)
+            alert.show()
+            //makeNewControlPoint()
         }
-        btnSecondActivity.setOnClickListener{
-            val intent = Intent(this, SecondActivity::class.java)
-            startActivity(intent)
+        btnRestore.setOnClickListener {
+            /* val intent = Intent(this, SecondActivity::class.java)
+             startActivity(intent)*/
         }
         butBounds.setOnClickListener {
             lateinit var newPoint: com.mapbox.geojson.Point
             getMyLastLocation {
-                when (clickCounter) {
-                    0 -> {
-                        newPoint = com.mapbox.geojson.Point.fromLngLat(
-                            lastKnownLocation.longitude,
-                            lastKnownLocation.latitude
-                        )
-                        fieldPerimeter.add(newPoint)
-                        showCircle(newPoint)
-                        showLine(newPoint, fieldPerimeter[fieldPerimeter.size - 1])
-                        clickCounter += 1
-                    }
-
-                    1 -> {
-                        newPoint = TurfMeasurement.destination(
-                            fieldPerimeter[0],
-                            100.0,
-                            0.0,
-                            TurfConstants.UNIT_METERS
-                        )
-                        fieldPerimeter.add(newPoint)
-                        val n = fieldPerimeter.size
-                        showLine(fieldPerimeter[n - 2], fieldPerimeter[n - 1])
-                        showCircle(fieldPerimeter[n - 1])
-                        clickCounter += 1
-                    }
-
-                    2 -> {
-                        newPoint = TurfMeasurement.destination(
-                            fieldPerimeter[1],
-                            115.0,
-                            100.0,
-                            TurfConstants.UNIT_METERS
-                        )
-                        fieldPerimeter.add(newPoint)
-                        val n = fieldPerimeter.size
-                        showLine(fieldPerimeter[n - 2], fieldPerimeter[n - 1])
-                        showCircle(fieldPerimeter[n - 1])
-                        clickCounter += 1
-                    }
-
-                    3 -> {
-                        newPoint = TurfMeasurement.destination(
-                            fieldPerimeter[2],
-                            100.0,
-                            180.0,
-                            TurfConstants.UNIT_METERS
-                        )
-                        fieldPerimeter.add(newPoint)
-                        val n = fieldPerimeter.size
-                        showLine(fieldPerimeter[n - 2], fieldPerimeter[n - 1])
-                        showCircle(fieldPerimeter[n - 1])
-                        clickCounter += 1
-                        val poly1 =
-                            com.mapbox.geojson.Polygon.fromLngLats(mutableListOf(fieldPerimeter))
-                    }
-
-                    4 -> {
-                        val n = fieldPerimeter.size
-                        showLine(fieldPerimeter[n - 1], fieldPerimeter[0])
-                        clickCounter += 1
-                    }
-
-                    5 -> {
-                        polylineAnnotationManager.deleteAll()
-                        circleAnnotationManager.deleteAll()
-                        val polygonAnnotationOptions: PolygonAnnotationOptions =
-                            PolygonAnnotationOptions()
-                                .withPoints(listOf(fieldPerimeter))
-                                //.withGeometry(bboxPolygon)
-                                // Style the polygon that will be added to the map.
-                                .withFillColor("#ee4e8b")
-                                .withFillOpacity(0.4)
-                        // Add the resulting polygon to the map.
-                        MainActivity.polygonAnnotationManager.create(polygonAnnotationOptions)
-                        polygonPerimeter =
-                            com.mapbox.geojson.Polygon.fromLngLats(mutableListOf(fieldPerimeter))
-
-                        bboxArray = TurfMeasurement.bbox(polygonPerimeter)
-                        var bboxPolygon =
-                            com.mapbox.geojson.Polygon.fromLngLats(mutableListOf(fieldPerimeter))
-                        val points = mutableListOf(fieldPerimeter)
-
-                        val polylineAnnotationOptions = PolylineAnnotationOptions()
-                            .withPoints(getListOfPointsFromBBoxArray(bboxArray))
-                            .withLineColor("#023020")  //dark green
-                            .withLineWidth(3.0)
-                        polylineAnnotationManager.create(polylineAnnotationOptions)
-
-                        clickCounter += 1
-                    }
-
-                    6 -> {
-                        val bboxSetOfPoints = getListOfPointsFromBBoxArray(bboxArray)
-                        val bboxHWidth = TurfMeasurement.distance(
-                            bboxSetOfPoints[0],
-                            bboxSetOfPoints[1]
-                        ) * 1000  //southwest to southeast
-                        val bboxHeight = TurfMeasurement.distance(
-                            bboxSetOfPoints[1],
-                            bboxSetOfPoints[2]
-                        ) * 1000 //southeast to northeast
-                        val xDimension = (ceil(bboxHWidth / cellWidth)).toInt()
-                        val yDimension = (ceil(bboxHeight / cellHeight)).toInt()
-
-                        // sub divide bbox into grid cells
-                        var nextNorthWestPoint = getListOfPointsFromBBoxArray(bboxArray)[3]  // corresponds to NW point
-                        lateinit var previousRowSouthWestPoint: com.mapbox.geojson.Point
-                        for (y in 0 until yDimension) {
-                            for (x in 0 until xDimension) {
-                                val thisCell = GridCell(nextNorthWestPoint, cellHeight, cellWidth)
-                                if(x==0){
-                                    //this means the first of the current row.  we need to save because the sw point will be used
-                                    //as the first nw point of the next row
-                                    previousRowSouthWestPoint=thisCell.southWest
-                                }
-                                bboxCells.add(thisCell)
-                                nextNorthWestPoint=thisCell.northEast
-                            }
-                            nextNorthWestPoint=previousRowSouthWestPoint
-                        }
-                        //Toast.makeText(this, "This is the width: $bboxHWidth", Toast.LENGTH_SHORT)
-
-                        //Make line for each GridCell
-                        for (bboxCell in bboxCells) {
-
-                            val polylineAnnotationOptions = PolylineAnnotationOptions()
-                                .withPoints(bboxCell.getPointsForLine())
-                                .withLineColor("#FF0000")
-                                .withLineWidth(3.0)
-                            gridlineAnnotationManager.create(polylineAnnotationOptions)
-                        }
-
-                        clickCounter += 1
-                    }
-
-                    7 -> {
-                        for (_cell in bboxCells){
-                            if(TurfJoins.inside(_cell.getCenter(),polygonPerimeter)){
-                                fieldCells.add(_cell)
-                            }
-                        }
-                        gridlineAnnotationManager.deleteAll()
-                        polylineAnnotationManager.deleteAll()
-                        for (_cell in fieldCells) {
-
-                            val polylineAnnotationOptions = PolylineAnnotationOptions()
-                                .withPoints(_cell.getPointsForLine())
-                                .withLineColor("#FF0000")
-                                .withLineWidth(3.0)
-                            gridlineAnnotationManager.create(polylineAnnotationOptions)
-                        }
-
-                        clickCounter += 1
-                    }
-                }
-
+                calculateFieldCellsFromControlPoints()
             }
 
+        }
+
+        btnOfflineDownload.setOnClickListener{
+            downloadOfflineMap()
         }
 
 
@@ -380,7 +261,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                         pulsingColor = Color.parseColor("#FF0000")  //red
                         pulsingEnabled = true
                     }
-
                 }
             }
         )
@@ -406,12 +286,15 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     override fun onSaveInstanceState(outState: Bundle, outPersistentState: PersistableBundle) {
         super.onSaveInstanceState(outState, outPersistentState)
-        cameraState=mapView.getMapboxMap().cameraState
+        cameraState = mapView.getMapboxMap().cameraState
         //outState.putSerializable("cameraState", cameraState)
         //outState.putSerializable("polylineAnnotationManager")
     }
 
-    override fun onRestoreInstanceState( savedInstanceState: Bundle?, persistentState: PersistableBundle?) {
+    override fun onRestoreInstanceState(
+        savedInstanceState: Bundle?,
+        persistentState: PersistableBundle?
+    ) {
         super.onRestoreInstanceState(savedInstanceState, persistentState)
         //mapView.getMapboxMap().cameraState = savedInstanceState.getSerializable("cameraState") as CameraState
     }
@@ -463,61 +346,52 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     //center location on screen
     fun movePuckToCenter(zoomStatus: Boolean) {
-       getMyLastLocation {
-           if (zoomStatus) {
-           var cameraOptions = CameraOptions.Builder()
-               .center(
-                   com.mapbox.geojson.Point.fromLngLat(
-                       lastKnownLocation.longitude,
-                       lastKnownLocation.latitude
-                   )
-               )
-               .zoom(20.0)
-               .build()
-           // Move the camera to the new center point.
-           mapView.getMapboxMap().easeTo(cameraOptions)
-       } else {
-           //NO Zoom
-           var cameraOptions = CameraOptions.Builder()
-               .center(
-                   com.mapbox.geojson.Point.fromLngLat(
-                       lastKnownLocation.longitude,
-                       lastKnownLocation.latitude,
-                       //lastKnownLocation.altitude
-                   )
-               )
-               .build()
-           // Move the camera to the new center point.
-           mapView.getMapboxMap().easeTo(cameraOptions)
-       } }
-
+        getMyLastLocation {
+            if (zoomStatus) {
+                var cameraOptions = CameraOptions.Builder()
+                    .center(
+                        com.mapbox.geojson.Point.fromLngLat(
+                            lastKnownLocation.longitude,
+                            lastKnownLocation.latitude
+                        )
+                    )
+                    .zoom(20.0)
+                    .build()
+                // Move the camera to the new center point.
+                mapView.getMapboxMap().easeTo(cameraOptions)
+            } else {
+                //NO Zoom
+                var cameraOptions = CameraOptions.Builder()
+                    .center(
+                        com.mapbox.geojson.Point.fromLngLat(
+                            lastKnownLocation.longitude,
+                            lastKnownLocation.latitude,
+                            //lastKnownLocation.altitude
+                        )
+                    )
+                    .build()
+                // Move the camera to the new center point.
+                mapView.getMapboxMap().easeTo(cameraOptions)
+            }
+        }
     }
 
-    fun createPolygonTester() {
-        val points2 =
-            listOf(
-                listOf(
-                    com.mapbox.geojson.Point.fromLngLat(120.99833, 14.51943),
-                    com.mapbox.geojson.Point.fromLngLat(120.99692, 14.52203),
-                    com.mapbox.geojson.Point.fromLngLat(120.99402, 14.52290)
-                )
+    fun makeNewControlPoint() {
+        getMyLastLocation {
+            val newControlPoint = ControlPoint(
+                lastKnownLocation.longitude,
+                lastKnownLocation.latitude,
+                lastKnownLocation.altitude
             )
+            //val numRecs = db.controlPointDao().count()
+            db.controlPointDao().upsert(newControlPoint)
+            val pointLastKnownLocation = com.mapbox.geojson.Point.fromLngLat(
+                newControlPoint.longitude,
+                newControlPoint.latitude
+            )
+            showCircle(pointLastKnownLocation)
 
-        val listOfPoints = points2[0]
-
-        val polylineAnnotationOptions2 = PolylineAnnotationOptions()
-            .withPoints(listOfPoints)
-            .withLineColor("#FF0000")
-            .withLineWidth(3.0)
-        polylineAnnotationManager.create(polylineAnnotationOptions2)
-
-        //add circle
-        val circleAnnotationOption = CircleAnnotationOptions()
-            .withCircleColor("#FF0000")
-            .withPoint(com.mapbox.geojson.Point.fromLngLat(120.99833, 14.51943))
-            //.withPoint(  com.mapbox.geojson.Point.fromLngLat(120.99692,14.52203))
-            .withCircleRadius(5.0)
-        circleAnnotationManager.create(circleAnnotationOption)
+        }
     }
 
     fun getMyLastLocation(finishFunction: () -> Unit) {
@@ -585,15 +459,208 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         return listOf(southWest, southEast, northEast, northWest)
     }
 
-    companion object{
-        lateinit var polygonAnnotationManager: PolygonAnnotationManager
+    fun calculateFieldCellsFromControlPoints() {
+        val listControlPoints = db.controlPointDao().getAllControlPoints()
+        val listPoints = mutableListOf<com.mapbox.geojson.Point>()
+        /*    if(listControlPoints.size>7){
+                Toast.makeText(this,"Number of CONTROL POINTS: ${listControlPoints.size}",Toast.LENGTH_SHORT).show()
+                val removeCP = listControlPoints.last()
+                db.controlPointDao().delete(removeCP)
+            }else
+            {
+                Toast.makeText(this,"No more to remove",Toast.LENGTH_SHORT).show()
+            }
+            return*/
+
+        for (_controlPoint in listControlPoints) {
+            listPoints.add(
+                com.mapbox.geojson.Point.fromLngLat(
+                    _controlPoint.longitude,
+                    _controlPoint.latitude
+                )
+            )
+        }
+
+
+        val polygonAnnotationOptions: PolygonAnnotationOptions =
+            PolygonAnnotationOptions()
+                .withPoints(listOf(listPoints))
+                //.withGeometry(bboxPolygon)
+                // Style the polygon that will be added to the map.
+                .withFillColor("#ee4e8b")
+                .withFillOpacity(0.4)
+        // Add the resulting polygon to the map.
+        polygonAnnotationManager.deleteAll()
+        polygonAnnotationManager.create(polygonAnnotationOptions)
+
+        //calculate bbox array
+        polygonPerimeter =
+            com.mapbox.geojson.Polygon.fromLngLats(mutableListOf(listPoints))
+
+        bboxArray = TurfMeasurement.bbox(polygonPerimeter)
+
+        val bboxSetOfPoints = getListOfPointsFromBBoxArray(bboxArray)
+        val bboxWidth = TurfMeasurement.distance(
+            bboxSetOfPoints[0],
+            bboxSetOfPoints[1]
+        ) * 1000  //southwest to southeast
+        val bboxHeight = TurfMeasurement.distance(
+            bboxSetOfPoints[1],
+            bboxSetOfPoints[2]
+        ) * 1000 //southeast to northeast
+        val xDimension = (ceil(bboxWidth / cellSide)).toInt()
+        val yDimension = (ceil(bboxHeight / cellSide)).toInt()
+
+        // sub divide bbox into grid cells
+        var nextNorthWestPoint =
+            getListOfPointsFromBBoxArray(bboxArray)[3]  // corresponds to NW point
+        lateinit var previousRowSouthWestPoint: com.mapbox.geojson.Point
+        for (y in 0 until yDimension) {
+            for (x in 0 until xDimension) {
+                val thisCell = GridCell(nextNorthWestPoint, cellSide, cellSide)
+                if (x == 0) {
+                    //this means the first of the current row.  we need to save because the sw point will be used
+                    //as the first nw point of the next row
+                    previousRowSouthWestPoint = thisCell.southWest
+                }
+                bboxCells.add(thisCell)
+                nextNorthWestPoint = thisCell.northEast
+            }
+            nextNorthWestPoint = previousRowSouthWestPoint
+        }
+        for (_cell in bboxCells) {
+            if (TurfJoins.inside(_cell.getCenter(), polygonPerimeter)) {
+                fieldCells.add(_cell)
+            }
+        }
+        gridlineAnnotationManager.deleteAll()
+        //polylineAnnotationManager.deleteAll()
+        for (_cell in fieldCells) {
+
+            val polylineAnnotationOptions = PolylineAnnotationOptions()
+                .withPoints(_cell.getPointsForLine())
+                .withLineColor("#FF0000")
+                .withLineWidth(3.0)
+            gridlineAnnotationManager.create(polylineAnnotationOptions)
+        }
+
+
     }
 
+   private  fun downloadOfflineMap() {
 
-    /*  private val onIndicatorBearingChangedListener = OnIndicatorBearingChangedListener {
-          mapView.getMapboxMap().setCamera(CameraOptions.Builder().bearing(it).build())
-      }*/
+       val stylePackLoadOptions = StylePackLoadOptions.Builder()
+           .glyphsRasterizationMode(GlyphsRasterizationMode.IDEOGRAPHS_RASTERIZED_LOCALLY)
+           //.metadata(Value(STYLE_PACK_METADATA))
+           //.metadata(Value("Baguio"))
+           .build()
+
+        val offlineManager: OfflineManager =
+            OfflineManager(MapInitOptions.getDefaultResourceOptions(this))
+
+
+        val tilesetDescriptor = offlineManager.createTilesetDescriptor(
+            TilesetDescriptorOptions.Builder()
+                .styleURI(Style.MAPBOX_STREETS)
+                .minZoom(10)
+                .maxZoom(16)
+                .build()
+        )
+        //Baguio
+        //northwest 120.5444103807573,16.43706633632942
+        //southwest 120.57054042017378, 16.370483649085934
+        //southeast 120.6299454316597, 16.36245302247127
+        //northeast  120.62974129072676, 16.36382412846368
+        val baguioPoints = mutableListOf<com.mapbox.geojson.Point>()
+        baguioPoints.add(com.mapbox.geojson.Point.fromLngLat(120.5444103807573, 16.43706633632942))
+        baguioPoints.add(com.mapbox.geojson.Point.fromLngLat(120.57054042017378, 16.370483649085934))
+        baguioPoints.add(com.mapbox.geojson.Point.fromLngLat(120.6299454316597, 16.36245302247127))
+        baguioPoints.add(com.mapbox.geojson.Point.fromLngLat(120.62974129072676, 16.36382412846368))
+
+        val baguioPolygon = com.mapbox.geojson.Polygon.fromLngLats(mutableListOf(baguioPoints))
+        val tileRegionLoadOptions = TileRegionLoadOptions.Builder()
+            .geometry(baguioPolygon)
+            .descriptors(listOf(tilesetDescriptor))
+            //.metadata(Value(TILE_REGION_METADATA))
+            .acceptExpired(true)
+            .networkRestriction(NetworkRestriction.NONE)
+            .build()
+
+        //download the STYLE PACK
+        val stylePackCancelable = offlineManager.loadStylePack(
+            Style.MAPBOX_STREETS,
+            // Build Style pack load options
+            stylePackLoadOptions,
+            { progress ->
+                // Handle the download progress
+            },
+            { expected ->
+                if (expected.isValue) {
+                    expected.value?.let { stylePack ->
+                        // Style pack download finished successfully
+                        runOnUiThread(Runnable {
+                            Toast.makeText(this, "STYLE PACK SUCCESSFULLY LOADED", Toast.LENGTH_SHORT).show()
+                        })
+                    }
+                }
+                expected.error?.let {
+                    // Handle errors that occurred during the style pack download.
+                    runOnUiThread(Runnable {
+                        Toast.makeText(this, "STYLE PACK LOADING ERROR", Toast.LENGTH_SHORT).show()
+                    })
+                }
+            }
+        )
+        // Cancel the download if needed
+        //stylePackCancelable.cancel()
+
+        //  DOWNLOAD THE TILE REGION
+        // You need to keep a reference of the created tileStore and keep it during the download process.
+        // You are also responsible for initializing the TileStore properly, including setting the proper access token.
+        val tileStore = TileStore.create().also {
+            // Set default access token for the created tile store instance
+            it.setOption(
+                TileStoreOptions.MAPBOX_ACCESS_TOKEN,
+                TileDataDomain.MAPS,
+                Value(getString(R.string.mapbox_access_token))
+            )
+        }
+        val tileRegionCancelable = tileStore.loadTileRegion(
+            "Baguio_Proper",
+            tileRegionLoadOptions,
+            { progress ->
+                // Handle the download progress
+            },
+            { expected: Expected<TileRegionError, TileRegion> ->
+                if (expected.isValue) {
+                    // Tile region download finishes successfully
+                    runOnUiThread(Runnable {
+                        Toast.makeText(this, "TILE REGION SUCCESSFULLY LOADED", Toast.LENGTH_SHORT).show()
+                    })
+
+                }
+                expected.error?.let {
+                    // Handle errors that occurred during the tile region download.
+                    runOnUiThread(Runnable {
+                        Toast.makeText(this, "TILE REGION LOADING ERROR", Toast.LENGTH_SHORT).show()
+                    })
+                }
+            }
+        )
+
+    }
+
+    /* // Cancel the download if needed
+     tileRegionCancelable.cancel()*/
 
 }
+
+/*companion object {
+    lateinit var db: FieldDatabase
+}*/
+
+
+
+
 
 
