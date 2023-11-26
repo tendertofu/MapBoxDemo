@@ -19,6 +19,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
+import androidx.lifecycle.lifecycleScope
 import androidx.room.Room
 import com.enterpreta.mapboxdemo.data.ControlPoint
 import com.enterpreta.mapboxdemo.data.ControlPointDao
@@ -68,7 +69,11 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.io.File
+import java.math.RoundingMode
+import java.text.DecimalFormat
 import kotlin.math.ceil
 
 
@@ -224,7 +229,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             alertDialog.setPositiveButton(
                 "Yes"
             ) { _, _ ->
-               makeNewControlPoint()  //This ws where new control point is made
+                makeNewControlPoint()  //This ws where new control point is made
             }
             alertDialog.setNegativeButton(
                 "Cancel"
@@ -251,10 +256,11 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         }
 
         btnCountMaps.setOnClickListener {
-          // countMaps()
-            checkStylePacks {stylePackName ->
+            // countMaps()
+            checkStylePacks { stylePackName ->
                 runOnUiThread(Runnable {
-                    Toast.makeText(this, "STYLE PACK NAME: $stylePackName", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "STYLE PACK NAME: $stylePackName", Toast.LENGTH_SHORT)
+                        .show()
                 })
             }
         }
@@ -286,6 +292,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
 
         movePuckToCenter(true)  //zoom in when starting
+
+        lifecycleScope.launch {
+            calculateGpsAccuracy()
+        }
     }
 
     override fun onResume() {
@@ -320,6 +330,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     }
 
     override fun onSensorChanged(event: SensorEvent) {
+        //this method makes the orientation of device pointed to match the actual compass direction
         if (event.sensor == magnetometer) {
             System.arraycopy(event.values, 0, lastMagnetometer, 0, event.values.size);
             lastMagnetometerSet = true;
@@ -342,12 +353,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
             if (Math.abs(azimuthInDegrees - azimuthInDegrees_prev) > rotationSensitivity) {
                 azimuthInDegrees_prev = (azimuthInDegrees + azimuthInDegrees_prev) / 2
-                textView2.text = azimuthInDegrees.toString()
+                //textView2.text = azimuthInDegrees_prev.toString()
                 var newCameraPosition = CameraOptions.Builder()
-                    .bearing(azimuthInDegrees.toDouble())
+                    .bearing(azimuthInDegrees_prev.toDouble())
                     .build()
-                //Toast.makeText(this, "Bearing is: $bearing", Toast.LENGTH_SHORT).show()
-                // set camera position
                 mapView.getMapboxMap().setCamera(newCameraPosition)
             }
 
@@ -355,7 +364,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     }
 
     //center location on screen
-    fun movePuckToCenter(zoomStatus: Boolean) {
+    private fun movePuckToCenter(zoomStatus: Boolean) {
         getMyLastLocation {
             if (zoomStatus) {
                 var cameraOptions = CameraOptions.Builder()
@@ -386,7 +395,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         }
     }
 
-    fun makeNewControlPoint() {
+    private fun makeNewControlPoint() {
         getMyLastLocation {
             val newControlPoint = ControlPoint(
                 lastKnownLocation.longitude,
@@ -404,7 +413,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         }
     }
 
-    fun getMyLastLocation(finishFunction: () -> Unit) {
+    private fun getMyLastLocation(finishFunction: () -> Unit) {
         //This function is designed to update the lastKnownLocation variable
         //and accept the steps (in the form of a function parameter called finishFunction)
         //on what to do with the lastKnownLocation
@@ -451,7 +460,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         polylineAnnotationManager.create(polylineAnnotationOptions)
     }
 
-    fun showCircle(point1: com.mapbox.geojson.Point) {
+    private fun showCircle(point1: com.mapbox.geojson.Point) {
         val circleAnnotationOption = CircleAnnotationOptions()
             .withCircleColor("#FF0000")
             .withPoint(point1)
@@ -460,7 +469,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         circleAnnotationManager.create(circleAnnotationOption)
     }
 
-    fun getListOfPointsFromBBoxArray(bboxArray: DoubleArray): List<com.mapbox.geojson.Point> {
+    private fun getListOfPointsFromBBoxArray(bboxArray: DoubleArray): List<com.mapbox.geojson.Point> {
         val southWest = com.mapbox.geojson.Point.fromLngLat(bboxArray[0], bboxArray[1])
         val northEast = com.mapbox.geojson.Point.fromLngLat(bboxArray[2], bboxArray[3])
         val southEast = com.mapbox.geojson.Point.fromLngLat(bboxArray[2], bboxArray[1])
@@ -698,10 +707,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             )
         }
 
-        tileStore.getAllTileRegions {expected ->
-            if (expected.isValue){
+        tileStore.getAllTileRegions { expected ->
+            if (expected.isValue) {
                 expected.value?.let { mutableListTileRegions ->
-                    val regionId= mutableListTileRegions[0].id
+                    val regionId = mutableListTileRegions[0].id
                     regionId
                 }
             }
@@ -710,27 +719,57 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     }
 
-    private fun checkStylePacks(function_StylePack: (stylePackName:String)->Unit) {
+    private fun checkStylePacks(function_StylePack: (stylePackName: String) -> Unit) {
         if (!this::offlineManager.isInitialized) {
             offlineManager = OfflineManager(MapInitOptions.getDefaultResourceOptions(this))
         }
-            offlineManager.getAllStylePacks { expected ->
-                    if (expected.isValue) {
-                        expected.value?.let { stylePackList ->
-                            //Log.d("Existing style packs: $stylePackList")
-                            offlineManager.getStylePackMetadata(stylePackList[0].styleURI) {
-                                val metadataStylePack = it.value.toString()
-                                function_StylePack(metadataStylePack)
-                            }
-                        }
+        offlineManager.getAllStylePacks { expected ->
+            if (expected.isValue) {
+                expected.value?.let { stylePackList ->
+                    //Log.d("Existing style packs: $stylePackList")
+                    offlineManager.getStylePackMetadata(stylePackList[0].styleURI) {
+                        val metadataStylePack = it.value.toString()
+                        function_StylePack(metadataStylePack)
                     }
-                    expected.error?.let { stylePackError ->
-                        //enter handler here
-                    }
-
                 }
+            }
+            expected.error?.let { stylePackError ->
+                //enter handler here
+            }
+
+        }
+    }
+
+    private suspend fun calculateGpsAccuracy() {
+        var accuracy: Double = 0.0
+        lateinit var previousGeoPoint: com.mapbox.geojson.Point
+        var firstPass = true
+        while (true) {
+            if (firstPass) {
+                getMyLastLocation {
+                    previousGeoPoint = com.mapbox.geojson.Point.fromLngLat(
+                        lastKnownLocation.longitude,
+                        lastKnownLocation.latitude
+                    )
+                    firstPass=false
+                }
+            } else {
+                getMyLastLocation {
+                    val currentGurrentGeoPoint = com.mapbox.geojson.Point.fromLngLat(
+                        lastKnownLocation.longitude,
+                        lastKnownLocation.latitude
+                    )
+                    accuracy = TurfMeasurement.distance(previousGeoPoint, currentGurrentGeoPoint)
+                    //round accuracy to one decimal point number
+                    textView2.text =
+                        accuracy.toBigDecimal().setScale(1, RoundingMode.HALF_UP).toDouble()
+                            .toString()
+                }
+            }
+            delay(1500L)
         }
 
+    }
 }
 
 //}
