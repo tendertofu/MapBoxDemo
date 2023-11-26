@@ -7,15 +7,28 @@
     tools:context=".MainActivity">
 
     <Button
+        android:id="@+id/btnCountMaps"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Count Maps"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHorizontal_bias="0.88"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintVertical_bias="0.100000024" />
+
+    <Button
         android:id="@+id/btnOfflineDownload"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="Offline Download"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHorizontal_bias="0.14"
         app:layout_constraintStart_toStartOf="@+id/mapView"
         app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintVertical_bias="0.07999998" />
+        app:layout_constraintVertical_bias="0.100000024" />
 
     <Button
         android:id="@+id/btnClear"

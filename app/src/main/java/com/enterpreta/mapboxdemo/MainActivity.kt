@@ -64,6 +64,11 @@ import com.mapbox.maps.plugin.annotation.generated.createPolylineAnnotationManag
 import com.mapbox.maps.plugin.locationcomponent.location2
 import com.mapbox.turf.TurfJoins
 import com.mapbox.turf.TurfMeasurement
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import kotlin.math.ceil
 
 
@@ -112,6 +117,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private lateinit var butBounds: Button
     private lateinit var btnRestore: Button
     private lateinit var btnOfflineDownload: Button
+    private lateinit var btnCountMaps: Button
     private var clickCounter: Int = 0
 
     //to save state for resume
@@ -126,6 +132,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private lateinit var gridlineAnnotationManager: PolylineAnnotationManager
     private lateinit var polygonPerimeter: com.mapbox.geojson.Polygon
     private lateinit var lastKnownLocation: Location
+
+    private lateinit var offlineManager: OfflineManager
 
     //private lateinit var permissionsListener : PermissionsListener
 
@@ -203,24 +211,20 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         btnControlPoint = findViewById(R.id.btnControlPoint)
         butBounds = findViewById(R.id.butBounds)
         btnRestore = findViewById(R.id.btnRestore)
-        btnOfflineDownload= findViewById(R.id.btnOfflineDownload)
+        btnOfflineDownload = findViewById(R.id.btnOfflineDownload)
+        btnCountMaps = findViewById(R.id.btnCountMaps)
 
         centerMe.setOnClickListener {
             movePuckToCenter(false)
         }
         btnControlPoint.setOnClickListener {
-
             val alertDialog: AlertDialog.Builder = AlertDialog.Builder(this)
             // alertDialog.setTitle("Add Control Point")
             alertDialog.setMessage("Record a CONTROL POINT at current location?")
             alertDialog.setPositiveButton(
                 "Yes"
             ) { _, _ ->
-                Toast.makeText(
-                    this@MainActivity,
-                    "I would have made CONTROL POINT",
-                    Toast.LENGTH_LONG
-                ).show()
+               makeNewControlPoint()  //This ws where new control point is made
             }
             alertDialog.setNegativeButton(
                 "Cancel"
@@ -242,10 +246,18 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         }
 
-        btnOfflineDownload.setOnClickListener{
+        btnOfflineDownload.setOnClickListener {
             downloadOfflineMap()
         }
 
+        btnCountMaps.setOnClickListener {
+          // countMaps()
+            checkStylePacks {stylePackName ->
+                runOnUiThread(Runnable {
+                    Toast.makeText(this, "STYLE PACK NAME: $stylePackName", Toast.LENGTH_SHORT).show()
+                })
+            }
+        }
 
         mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
@@ -274,9 +286,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
 
         movePuckToCenter(true)  //zoom in when starting
-
     }
-
 
     override fun onResume() {
         super.onResume()
@@ -459,7 +469,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         return listOf(southWest, southEast, northEast, northWest)
     }
 
-    fun calculateFieldCellsFromControlPoints() {
+    private fun calculateFieldCellsFromControlPoints() {
         val listControlPoints = db.controlPointDao().getAllControlPoints()
         val listPoints = mutableListOf<com.mapbox.geojson.Point>()
         /*    if(listControlPoints.size>7){
@@ -547,17 +557,17 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     }
 
-   private  fun downloadOfflineMap() {
+    private fun downloadOfflineMap() {
 
-       val stylePackLoadOptions = StylePackLoadOptions.Builder()
-           .glyphsRasterizationMode(GlyphsRasterizationMode.IDEOGRAPHS_RASTERIZED_LOCALLY)
-           //.metadata(Value(STYLE_PACK_METADATA))
-           //.metadata(Value("Baguio"))
-           .build()
+        if (!this::offlineManager.isInitialized) {
+            offlineManager = OfflineManager(MapInitOptions.getDefaultResourceOptions(this))
+        }
 
-        val offlineManager: OfflineManager =
-            OfflineManager(MapInitOptions.getDefaultResourceOptions(this))
-
+        val stylePackLoadOptions = StylePackLoadOptions.Builder()
+            .glyphsRasterizationMode(GlyphsRasterizationMode.IDEOGRAPHS_RASTERIZED_LOCALLY)
+            //.metadata(Value(STYLE_PACK_METADATA))
+            .metadata(Value("STREET1"))
+            .build()
 
         val tilesetDescriptor = offlineManager.createTilesetDescriptor(
             TilesetDescriptorOptions.Builder()
@@ -567,21 +577,21 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 .build()
         )
         //Baguio
-        //northwest 120.5444103807573,16.43706633632942
-        //southwest 120.57054042017378, 16.370483649085934
-        //southeast 120.6299454316597, 16.36245302247127
-        //northeast  120.62974129072676, 16.36382412846368
+        //northwest  125.5710719235847,7.097329293232832
+        //southwest  125.5707077748098, 7.042640458726822
+        //southeast  125.61064275712118, 7.049747963678297
+        //northeast  125.63843944693669, 7.086970231698748
         val baguioPoints = mutableListOf<com.mapbox.geojson.Point>()
-        baguioPoints.add(com.mapbox.geojson.Point.fromLngLat(120.5444103807573, 16.43706633632942))
-        baguioPoints.add(com.mapbox.geojson.Point.fromLngLat(120.57054042017378, 16.370483649085934))
-        baguioPoints.add(com.mapbox.geojson.Point.fromLngLat(120.6299454316597, 16.36245302247127))
-        baguioPoints.add(com.mapbox.geojson.Point.fromLngLat(120.62974129072676, 16.36382412846368))
+        baguioPoints.add(com.mapbox.geojson.Point.fromLngLat(125.5710719235847, 7.097329293232832))
+        baguioPoints.add(com.mapbox.geojson.Point.fromLngLat(125.5707077748098, 7.042640458726822))
+        baguioPoints.add(com.mapbox.geojson.Point.fromLngLat(125.61064275712118, 7.049747963678297))
+        baguioPoints.add(com.mapbox.geojson.Point.fromLngLat(125.63843944693669, 7.086970231698748))
 
         val baguioPolygon = com.mapbox.geojson.Polygon.fromLngLats(mutableListOf(baguioPoints))
         val tileRegionLoadOptions = TileRegionLoadOptions.Builder()
             .geometry(baguioPolygon)
             .descriptors(listOf(tilesetDescriptor))
-            //.metadata(Value(TILE_REGION_METADATA))
+            .metadata(Value("DAVAO CITY"))
             .acceptExpired(true)
             .networkRestriction(NetworkRestriction.NONE)
             .build()
@@ -599,7 +609,11 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                     expected.value?.let { stylePack ->
                         // Style pack download finished successfully
                         runOnUiThread(Runnable {
-                            Toast.makeText(this, "STYLE PACK SUCCESSFULLY LOADED", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(
+                                this,
+                                "STYLE PACK SUCCESSFULLY LOADED",
+                                Toast.LENGTH_SHORT
+                            ).show()
                         })
                     }
                 }
@@ -635,7 +649,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 if (expected.isValue) {
                     // Tile region download finishes successfully
                     runOnUiThread(Runnable {
-                        Toast.makeText(this, "TILE REGION SUCCESSFULLY LOADED", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, "TILE REGION SUCCESSFULLY LOADED", Toast.LENGTH_SHORT)
+                            .show()
                     })
 
                 }
@@ -650,10 +665,75 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     }
 
-    /* // Cancel the download if needed
-     tileRegionCancelable.cancel()*/
+    private fun countMaps() {
+        if (!this::offlineManager.isInitialized) {
+            offlineManager = OfflineManager(MapInitOptions.getDefaultResourceOptions(this))
+        }
+
+        // Get a list of style packs that are currently available.
+        offlineManager.getAllStylePacks { expected ->
+            if (expected.isValue) {
+                expected.value?.let { stylePackList ->
+                    //Log.d("Existing style packs: $stylePackList")
+                    var metadataStylePack = ""
+                    offlineManager.getStylePackMetadata(stylePackList[0].styleURI) {
+                        metadataStylePack = it.value.toString()
+                    }
+                }
+            }
+            expected.error?.let { stylePackError ->
+                runOnUiThread(Runnable {
+                    Toast.makeText(this, "ERROR RETRIEVING STYLE PACK", Toast.LENGTH_SHORT).show()
+                })
+            }
+        }
+
+        //Check TILE STORE
+        val tileStore = TileStore.create().also {
+            // Set default access token for the created tile store instance
+            it.setOption(
+                TileStoreOptions.MAPBOX_ACCESS_TOKEN,
+                TileDataDomain.MAPS,
+                Value(getString(R.string.mapbox_access_token))
+            )
+        }
+
+        tileStore.getAllTileRegions {expected ->
+            if (expected.isValue){
+                expected.value?.let { mutableListTileRegions ->
+                    val regionId= mutableListTileRegions[0].id
+                    regionId
+                }
+            }
+        }
+
+
+    }
+
+    private fun checkStylePacks(function_StylePack: (stylePackName:String)->Unit) {
+        if (!this::offlineManager.isInitialized) {
+            offlineManager = OfflineManager(MapInitOptions.getDefaultResourceOptions(this))
+        }
+            offlineManager.getAllStylePacks { expected ->
+                    if (expected.isValue) {
+                        expected.value?.let { stylePackList ->
+                            //Log.d("Existing style packs: $stylePackList")
+                            offlineManager.getStylePackMetadata(stylePackList[0].styleURI) {
+                                val metadataStylePack = it.value.toString()
+                                function_StylePack(metadataStylePack)
+                            }
+                        }
+                    }
+                    expected.error?.let { stylePackError ->
+                        //enter handler here
+                    }
+
+                }
+        }
 
 }
+
+//}
 
 /*companion object {
     lateinit var db: FieldDatabase
