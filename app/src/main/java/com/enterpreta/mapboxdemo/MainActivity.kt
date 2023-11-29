@@ -136,7 +136,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private lateinit var polygonAnnotationManager: PolygonAnnotationManager
     private lateinit var gridlineAnnotationManager: PolylineAnnotationManager
     private lateinit var polygonPerimeter: com.mapbox.geojson.Polygon
-    private lateinit var lastKnownLocation: Location
+    //private lateinit var lastKnownLocation: Location
 
     private lateinit var offlineManager: OfflineManager
 
@@ -158,7 +158,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         val callback = LocationListeningCallback(this)
 
 
-        var permissionsListener: PermissionsListener = object : PermissionsListener {
+        var permissionsListener: PermissionsListener = object: PermissionsListener {
             override fun onExplanationNeeded(permissionsToExplain: List<String>) {
             }
 
@@ -354,8 +354,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             if (Math.abs(azimuthInDegrees - azimuthInDegrees_prev) > rotationSensitivity) {
                 azimuthInDegrees_prev = (azimuthInDegrees + azimuthInDegrees_prev) / 2
                 //textView2.text = azimuthInDegrees_prev.toString()
+                val average = (azimuthInDegrees + azimuthInDegrees_prev) / 2.0
                 var newCameraPosition = CameraOptions.Builder()
-                    .bearing(azimuthInDegrees_prev.toDouble())
+                    .bearing(average)
                     .build()
                 mapView.getMapboxMap().setCamera(newCameraPosition)
             }
@@ -365,7 +366,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     //center location on screen
     private fun movePuckToCenter(zoomStatus: Boolean) {
-        getMyLastLocation {
+        getMyLastLocation {lastKnownLocation ->
             if (zoomStatus) {
                 var cameraOptions = CameraOptions.Builder()
                     .center(
@@ -396,7 +397,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     }
 
     private fun makeNewControlPoint() {
-        getMyLastLocation {
+        getMyLastLocation {lastKnownLocation ->
             val newControlPoint = ControlPoint(
                 lastKnownLocation.longitude,
                 lastKnownLocation.latitude,
@@ -409,15 +410,14 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 newControlPoint.latitude
             )
             showCircle(pointLastKnownLocation)
-
         }
     }
 
-    private fun getMyLastLocation(finishFunction: () -> Unit) {
+    private fun getMyLastLocation(finishFunction: (lastKnowLocation: Location) -> Unit) {
         //This function is designed to update the lastKnownLocation variable
         //and accept the steps (in the form of a function parameter called finishFunction)
         //on what to do with the lastKnownLocation
-        var myPresentPoint = com.mapbox.geojson.Point.fromLngLat(0.0, 0.0)
+
         var isLocationReturned: Boolean = false;
         if (ActivityCompat.checkSelfPermission(
                 this,
@@ -439,8 +439,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         }
         mFusedLocationClient.lastLocation.addOnCompleteListener(this) { task ->
             var location: Location = task.result
-            lastKnownLocation = location
-            finishFunction()
+            finishFunction(location)
         }
     }
 
@@ -741,31 +740,15 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     }
 
     private suspend fun calculateGpsAccuracy() {
-        var accuracy: Double = 0.0
-        lateinit var previousGeoPoint: com.mapbox.geojson.Point
-        var firstPass = true
         while (true) {
-            if (firstPass) {
-                getMyLastLocation {
-                    previousGeoPoint = com.mapbox.geojson.Point.fromLngLat(
-                        lastKnownLocation.longitude,
-                        lastKnownLocation.latitude
-                    )
-                    firstPass=false
-                }
-            } else {
-                getMyLastLocation {
-                    val currentGurrentGeoPoint = com.mapbox.geojson.Point.fromLngLat(
-                        lastKnownLocation.longitude,
-                        lastKnownLocation.latitude
-                    )
-                    accuracy = TurfMeasurement.distance(previousGeoPoint, currentGurrentGeoPoint)
-                    //round accuracy to one decimal point number
-                    textView2.text =
-                        accuracy.toBigDecimal().setScale(1, RoundingMode.HALF_UP).toDouble()
-                            .toString()
-                }
+            getMyLastLocation {lastKnownLocation ->
+                val accuracy = lastKnownLocation.accuracy
+                //round accuracy to one decimal point number
+                textView2.text =
+                    accuracy.toBigDecimal().setScale(1, RoundingMode.HALF_UP).toDouble()
+                        .toString()
             }
+
             delay(1500L)
         }
 
