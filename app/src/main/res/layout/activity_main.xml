@@ -7,6 +7,16 @@
     tools:context=".MainActivity">
 
     <Button
+        android:id="@+id/btnGoField"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:layout_marginBottom="8dp"
+        android:text="Go Field"
+        app:layout_constraintBottom_toTopOf="@+id/butCenter"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <Button
         android:id="@+id/btnCountMaps"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"

@@ -99,8 +99,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var orientation = FloatArray(3)
     private var azimuthInRadians: Float = 0f
     private var azimuthInDegrees: Float = 0f
-    private var azimuthInDegrees_prev: Float = 0f
-    private val rotationSensitivity: Float = 5f // the amount of bearing change to make map rotate
+    private var azimuthInDegreesPrev: Float = 0f
+    private val rotationSensitivity: Float = 10f // the amount of bearing change to make map rotate
     private var fieldPerimeter: MutableList<com.mapbox.geojson.Point> = mutableListOf()
     private lateinit var bboxArray: DoubleArray
 
@@ -158,6 +158,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         val callback = LocationListeningCallback(this)
 
 
+        //region ***LOCATION PERMISSION MANAGEMENT USING MAPBOX CLASSES***
+
         var permissionsListener: PermissionsListener = object: PermissionsListener {
             override fun onExplanationNeeded(permissionsToExplain: List<String>) {
             }
@@ -198,7 +200,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             permissionsManager = PermissionsManager(permissionsListener)
             permissionsManager.requestLocationPermissions(this)
         }
-
+        //endregion
 
         //INSTANTIATE ROOM RELATED VARIABLES
         db = Room.databaseBuilder(
@@ -262,6 +264,26 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                     Toast.makeText(this, "STYLE PACK NAME: $stylePackName", Toast.LENGTH_SHORT)
                         .show()
                 })
+            }
+        }
+        findViewById<Button>(R.id.btnGoField).also{
+            //This will move the camera's center to the first point in the field polygon
+            it.setOnClickListener{
+                val listOfControlPoints = db.controlPointDao().getAllControlPoints()
+                if(listOfControlPoints.size>0){
+                    //NO Zoom change
+                    val cameraOptions = CameraOptions.Builder()
+                        .center(
+                            com.mapbox.geojson.Point.fromLngLat(
+                                listOfControlPoints[0].longitude,
+                                listOfControlPoints[0].latitude,
+                                //lastKnownLocation.altitude
+                            )
+                        )
+                        .build()
+                    // Move the camera to the new center point.
+                    mapView.getMapboxMap().easeTo(cameraOptions)
+                }
             }
         }
 
@@ -351,10 +373,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             azimuthInRadians = orientation[0]
             azimuthInDegrees = (Math.toDegrees(azimuthInRadians.toDouble()) + 360).toFloat() % 360
 
-            if (Math.abs(azimuthInDegrees - azimuthInDegrees_prev) > rotationSensitivity) {
-                azimuthInDegrees_prev = (azimuthInDegrees + azimuthInDegrees_prev) / 2
+            if (Math.abs(azimuthInDegrees - azimuthInDegreesPrev) > rotationSensitivity) {
+                azimuthInDegreesPrev = (azimuthInDegrees + azimuthInDegreesPrev) / 2
                 //textView2.text = azimuthInDegrees_prev.toString()
-                val average = (azimuthInDegrees + azimuthInDegrees_prev) / 2.0
+                val average = (azimuthInDegrees + azimuthInDegreesPrev) / 2.0
                 var newCameraPosition = CameraOptions.Builder()
                     .bearing(average)
                     .build()
